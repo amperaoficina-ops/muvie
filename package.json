@@ -1,0 +1,46 @@
+{
+  "name": "muvie",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "next dev --webpack --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "lint": "eslint .",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "check": "npm run lint && npm test && npm run build",
+    "db:seed-admin": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/seed-admin.mjs",
+    "db:demo": "node --env-file=.env.demo.local --experimental-strip-types scripts/seed-demo.mjs",
+    "dev:demo": "node --env-file=.env.demo.local --experimental-strip-types scripts/run-demo.mjs"
+  },
+  "dependencies": {
+    "mongodb": "7.5.0",
+    "next": "16.4.3",
+    "pdfkit": "0.20.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "0.35.5",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/pdfkit": "0.17.6",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/web-push": "^3.6.4",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.4.3",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "source-map-js": "1.2.2"
+  },
+  "type": "module",
+  "displayName": "MUVI-E"
+}
