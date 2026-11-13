@@ -296,16 +296,51 @@ function Stock({ state, filter }: { state: RetailState; filter: Filter }) {
   </>;
 }
 
+function SaleDocuments({ sale, filter, invoices }: { sale: Sale; filter: Filter; invoices: InvoiceMeta[] }) {
+  return <div className="sale-document-grid">
+    <div><h3>Contrato</h3><p>Minuta preenchida com os dados da venda, para revisão antes da assinatura.</p>
+      {!sale.canceledAt && <a className="back-link" href={`/admin/vendas/${sale.id}/contrato`}>Baixar minuta em PDF ↓</a>}
+    </div>
+    <div><h3>Emissão de mercadoria</h3><p>Emissor fiscal a configurar. Enquanto isso, anexe o XML ou PDF emitido externamente.</p></div>
+    <InvoiceBox owner="sale" id={sale.id} filter={filter} invoices={invoices} />
+  </div>;
+}
+
+function SaleFollowUp({ state, sales, invoices, filter }: {
+  state: RetailState; sales: Sale[]; invoices: InvoiceMeta[]; filter: Filter;
+}) {
+  const attached = new Set(invoices.filter((invoice) => invoice.owner === "sale").map((invoice) => invoice.ownerId));
+  const pendingPayment = new Set(state.ledger.filter((entry) => entry.kind === "venda" && !entry.canceled && balanceDue(entry) > 0).map((entry) => entry.saleId));
+  const active = sales.filter((sale) => !sale.canceledAt);
+  const missing = active.filter((sale) => !attached.has(sale.id));
+  const waiting = active.filter((sale) => pendingPayment.has(sale.id));
+  const pending = active.filter((sale) => !attached.has(sale.id) || pendingPayment.has(sale.id));
+  return <section className="panel sale-follow-up">
+    <div className="panel-title"><h2>Acompanhamento de vendas</h2><span className="pill">Asaas · integração futura</span></div>
+    <dl className="finance-rows">
+      <div><dt>A receber</dt><dd>{waiting.length}</dd></div>
+      <div><dt>Sem nota anexada</dt><dd>{missing.length}</dd></div>
+      <div><dt>Com nota anexada</dt><dd>{active.length - missing.length}</dd></div>
+    </dl>
+    {pending.length ? <details className="sale-pending-list"><summary>Ver pendências ({pending.length})</summary>
+      <ul>{pending.map((sale) => <li key={sale.id}>
+        <Link className="back-link" href={adminUrl("vendas", filter) + "&ficha=" + sale.id + "#venda-" + sale.id}>{sale.customer} · {sale.productName}</Link>
+        <small>{[pendingPayment.has(sale.id) && "A receber", !attached.has(sale.id) && "Sem nota anexada"].filter(Boolean).join(" · ")}</small>
+      </li>)}</ul>
+    </details> : <p className="admin-empty">Nenhuma pendência de recebimento ou anexo nesta seleção.</p>}
+  </section>;
+}
+
 function SalesTable({ state, sales, filter, canCancel = false, invoices = [], focus }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[]; focus?: string }) {
   return <Table headers={["Venda", "Unidade", "Total", "Status", ...(canCancel ? ["Ação"] : [])]}>{sales.map((sale) => {
     const receivable = state.ledger.find((entry) => entry.saleId === sale.id && entry.kind === "venda");
     const status = sale.canceledAt ? "Cancelada" : !receivable ? "Registrada" : balanceDue(receivable) > 0 ? "A receber" : "Recebida";
-    return <tr key={sale.id}>
+    return <tr key={sale.id} id={"venda-" + sale.id}>
       <td><strong>{sale.customer}</strong><small>{sale.quantity} × {sale.productName} · {dateLabel(sale.createdAt)}</small>{sale.sellerName && <small>Vendedor: {sale.sellerName}</small>}</td>
       <td>{storeName(sale.store, state)}</td><td><strong>{money(sale.total)}</strong><small>{sale.method}</small></td>
       <td><span className={"pill " + (sale.canceledAt ? "" : "green")}>{status}</span></td>
-      {canCancel && <td><details className="sale-documents" open={focus === sale.id}><summary>Notas fiscais</summary>
-        <InvoiceBox owner="sale" id={sale.id} filter={filter} invoices={invoices} />
+      {canCancel && <td><details className="sale-documents" open={focus === sale.id}><summary>Documentos</summary>
+        <SaleDocuments sale={sale} filter={filter} invoices={invoices} />
       </details>{!sale.canceledAt && <details className="cancel-sale"><summary>Cancelar</summary>
         <form action={reverseSale}><FilterInput filter={filter} /><input type="hidden" name="saleId" value={sale.id} />
           <p>As unidades voltam ao estoque de {storeName(sale.store, state)}.</p>
@@ -316,7 +351,7 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices = [], fo
   })}</Table>;
 }
 
-function Sales({ state, filter, invoices, focus }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string }) {
+function Sales({ state, filter, invoices, focus }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string }) {
   const sales = state.sales.filter((sale) => !filter || sale.store === filter);
   const contacts = state.contacts.filter((contact) => !filter || contact.store === filter);
   const products = state.products.filter((product) => product.price > 0 && (filter ? product.stock[filter] > 0 : storeList(state).some((store) => product.stock[store.id] > 0)));
@@ -343,7 +378,8 @@ function Sales({ state, filter, invoices, focus }: { state: RetailState; filter:
         <div className="span-two"><Submit>Registrar venda</Submit></div>
       </form> : <Empty>Para registrar uma venda, cadastre um produto com preço e adicione saldo à unidade em <Link href={adminUrl("estoque", filter)}>Estoque</Link>.</Empty>}
     </section>
-    <section className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable state={state} sales={sales} filter={filter} canCancel invoices={invoices} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
+    {invoices && <SaleFollowUp state={state} sales={sales} invoices={invoices} filter={filter} />}
+    <section className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable state={state} sales={sales} filter={filter} canCancel invoices={invoices ?? []} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
   </div>;
 }
 
@@ -468,7 +504,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <Stock state={state} filter={filter} />}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
-          {active.id === "vendas" && <Sales state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} />}
+          {active.id === "vendas" && <Sales state={state} filter={filter} invoices={invoices} focus={params.ficha} />}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}

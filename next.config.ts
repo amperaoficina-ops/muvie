@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  serverExternalPackages: ["pdfkit"],
   turbopack: { root: process.cwd() },
   devIndicators: false,
   distDir: process.env.MUVIE_DEMO === "1" ? ".next-demo" : ".next",

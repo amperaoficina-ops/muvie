@@ -302,3 +302,9 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .sales-workspace { display: grid; min-width: 0; gap: 1rem; }
 .sales-workspace .admin-form { padding: 1.2rem; }
 .sales-workspace td details[open] .admin-form { min-width: 260px; padding: .65rem 0; }
+
+.sale-document-grid { display: grid; gap: .8rem; min-width: min(19rem, 70vw); margin-block: .65rem; }
+.sale-document-grid p { white-space: normal; font-size: .83rem; margin-block: .25rem; }
+.sale-pending-list { margin: .25rem 1rem 1rem; }
+.sale-pending-list ul { display: grid; gap: .55rem; padding: .55rem 0; }
+.sale-pending-list small { display: block; }
