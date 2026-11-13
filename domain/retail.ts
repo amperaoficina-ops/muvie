@@ -49,7 +49,7 @@ export type Sale = {
   id: string; store: StoreId; productId: string; productName: string; sku: string;
   customer: string; contactId: string; quantity: number; unitPrice: number;
   discount: number; total: number; method: typeof paymentMethods[number];
-  createdAt: string; canceledAt?: string;
+  createdAt: string; canceledAt?: string; fiscalNotes?: string;
   sellerId?: string; sellerName?: string; commission?: number; cost?: number; missingCostUnits?: number; allocations?: StockLot[]; origin?: string;
 };
 export type Movement = {

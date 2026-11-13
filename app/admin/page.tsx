@@ -11,7 +11,7 @@ import {
   balanceDue, money, paymentMethods, stages, stockComposition, storeName, storeList,
   type Contact, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication } from "./actions";
+import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -301,7 +301,16 @@ function SaleDocuments({ sale, filter, invoices }: { sale: Sale; filter: Filter;
     <div><h3>Contrato</h3><p>Minuta preenchida com os dados da venda, para revisão antes da assinatura.</p>
       {!sale.canceledAt && <a className="back-link" href={`/admin/vendas/${sale.id}/contrato`}>Baixar minuta em PDF ↓</a>}
     </div>
-    <div><h3>Emissão de mercadoria</h3><p>Emissor fiscal a configurar. Enquanto isso, anexe o XML ou PDF emitido externamente.</p></div>
+    {!sale.canceledAt && <div><h3>Ficha fiscal para o contador</h3>
+      <p>Exporte os dados da venda e do produto para preparar a emissão. Após a autorização, anexe a nota abaixo.</p>
+      <form action={saveSaleFiscalNotes} className="invoice-form">
+        <FilterInput filter={filter} /><input type="hidden" name="focus" value={sale.id} />
+        <label>Informações complementares<textarea name="fiscalNotes" rows={3} maxLength={1500}
+          defaultValue={sale.fiscalNotes} placeholder="Ex.: número de série, chassi ou observações da operação" /></label>
+        <Submit>Salvar informações</Submit>
+      </form>
+      <a className="back-link" href={`/admin/vendas/${sale.id}/fiscal`}>Baixar ficha fiscal em PDF ↓</a>
+    </div>}
     <InvoiceBox owner="sale" id={sale.id} filter={filter} invoices={invoices} />
   </div>;
 }
@@ -316,7 +325,7 @@ function SaleFollowUp({ state, sales, invoices, filter }: {
   const waiting = active.filter((sale) => pendingPayment.has(sale.id));
   const pending = active.filter((sale) => !attached.has(sale.id) || pendingPayment.has(sale.id));
   return <section className="panel sale-follow-up">
-    <div className="panel-title"><h2>Acompanhamento de vendas</h2><span className="pill">Asaas · integração futura</span></div>
+    <div className="panel-title"><h2>Acompanhamento de vendas</h2></div>
     <dl className="finance-rows">
       <div><dt>A receber</dt><dd>{waiting.length}</dd></div>
       <div><dt>Sem nota anexada</dt><dd>{missing.length}</dd></div>

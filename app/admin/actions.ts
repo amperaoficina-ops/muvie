@@ -446,3 +446,12 @@ export async function saveStaffAdvance(form: FormData) {
     advances.unshift({ id, staffId, store: employee.store, date, amount: total, notes: value(form, "notes", 300, false) });
   });
 }
+
+export async function saveSaleFiscalNotes(form: FormData) {
+  await commit(form, "vendas", "Informações fiscais salvas.", (state) => {
+    const id = value(form, "focus", 36);
+    const sale = state.sales.find((item) => item.id === id && !item.canceledAt);
+    if (!sale) throw new RetailError("Venda ativa não encontrada.");
+    sale.fiscalNotes = value(form, "fiscalNotes", 1500, false);
+  });
+}
