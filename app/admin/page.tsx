@@ -17,6 +17,7 @@ import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
 import { StaffPanel } from "./staff";
 import { StockFields } from "./stock-fields";
+import { UnitDialog } from "./unit-dialog";
 import { Submit } from "./submit";
 import { CardSettings, Charts, TestimonialsSettings, UsersPanel } from "./operations";
 import { Simulator } from "./simulator";
@@ -31,7 +32,7 @@ const nav = [
   { id: "vendas", label: "Vendas", icon: "bag", description: "Registre vendas por unidade e acompanhe o histórico de cada operação." },
   { id: "funcionarios", label: "Funcionários", icon: "users", description: "Acompanhe equipe, remuneração, vendas do mês e vales por unidade." },
   { id: "financeiro", label: "Financeiro", icon: "grid", description: "Acompanhe DRE, caixa, contas a pagar e a receber por unidade.", admin: true },
-  { id: "lojas", label: "Administração das lojas", icon: "pin", description: "Cadastre unidades e configure equipe, custos fixos e estrutura.", admin: true },
+  { id: "lojas", label: "Todas as lojas", icon: "pin", description: "Cadastre unidades e configure equipe, custos fixos e estrutura.", admin: true },
   { id: "crm", label: "Clientes / CRM", icon: "users", description: "Consulte fichas, histórico de compras e vendas, documentos e retornos por unidade." },
   { id: "simulador", label: "Simular venda", icon: "bolt", description: "Monte uma proposta de cartão durante o atendimento com produtos em estoque." },
   { id: "taxas", label: "Taxas de cartão", icon: "bag", description: "Cadastre e ajuste as condições de débito e crédito das maquininhas.", admin: true },
@@ -482,13 +483,20 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 
   const filter: Filter = storeList(state ?? undefined).find((store) => store.id === params.loja)?.id ?? "";
 
+  const units = storeList(state ?? undefined);
+  const heading = active.id === "lojas" && filter ? "Unidade " + storeName(filter, state ?? undefined) : active.label;
+
   return <div className="admin-shell">
     <aside className="sidebar">
       <Brand href="/admin" /><span className="sidebar-label">GESTÃO DA LOJA</span>
       <nav aria-label="Módulos do painel">{navGroups.map(({ title, tabs }) => {
         const items = tabs.flatMap((id) => visibleNav.filter((item) => item.id === id));
         return items.length > 0 && <div className="sidebar-group" key={title}>
-          <p>{title}</p>{items.map((item) => <Link aria-current={active.id === item.id ? "page" : undefined} href={adminUrl(item.id, filter)} key={item.id}><Icon name={item.icon} size={19} />{item.label}</Link>)}
+          <p>{title}</p>{items.map((item) => item.id === "lojas" ? [
+            { id: "", label: "Todas as lojas" },
+            ...units.map((unit) => ({ id: unit.id, label: "Unidade " + unit.name })),
+          ].map((unit) => <Link key={unit.id} aria-current={active.id === "lojas" && filter === unit.id ? "page" : undefined}
+            href={adminUrl("lojas", unit.id)}><Icon name="pin" size={19} />{unit.label}</Link>) : <Link aria-current={active.id === item.id ? "page" : undefined} href={adminUrl(item.id, filter)} key={item.id}><Icon name={item.icon} size={19} />{item.label}</Link>)}
         </div>;
       })}</nav>
       <Link className="sidebar-footer" href="/">Ver landing page <Icon name="external" size={16} /></Link>
@@ -497,8 +505,9 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <header className="admin-top"><p><span>MUVI-E</span> / Gestão de loja</p><div><span>{user.name}</span><form action={signOut}><button type="submit">Sair</button></form></div></header>
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
-        <div className="admin-heading"><div><p className="eyebrow">OPERAÇÃO MULTILOJA</p><h1>{denied ? "Acesso restrito" : active.label}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
-          {!denied && !["taxas", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <nav className="branch-filter" aria-label={active.id === "lojas" ? "Selecionar loja" : "Filtrar por unidade"}>
+        <div className="admin-heading"><div><p className="eyebrow">OPERAÇÃO MULTILOJA</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
+          {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
+          {!denied && !["lojas", "taxas", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <nav className="branch-filter" aria-label="Filtrar por unidade">
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery}>Todas</Link>
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery} key={store.id}>{store.name}</Link>)}
           </nav>}

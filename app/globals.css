@@ -308,3 +308,8 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .sale-pending-list { margin: .25rem 1rem 1rem; }
 .sale-pending-list ul { display: grid; gap: .55rem; padding: .55rem 0; }
 .sale-pending-list small { display: block; }
+
+.unit-dialog { position: fixed; inset: 0; margin: auto; width: min(100% - 2rem, 520px); max-height: calc(100dvh - 2rem); padding: 0; }
+.unit-dialog::backdrop { background: rgb(15 17 13 / .66); }
+.unit-dialog-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: .55rem; }
+.admin-heading > .button { align-self: center; }

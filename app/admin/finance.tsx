@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { balanceDue, businessDate, financialReport, isCalendarDate, money, salesRanking, storeName, storeList,
   type Asset, type FixedCost, type LedgerEntry, type RetailState, type Staff, type StoreId } from "@/domain/retail";
-import { launchMonth, saveLedgerEntry, saveStoreItem, saveUnit, updateLedger } from "./actions";
+import { launchMonth, saveLedgerEntry, saveStoreItem, updateLedger } from "./actions";
 import { Submit } from "./submit";
 
 type Filter = StoreId | "";
@@ -75,13 +75,6 @@ export function StoresPanel({ state, filter, showSales }: { state: RetailState; 
   const fixed = state.fixedCosts.filter((item) => item.store === active);
   const assets = state.assets.filter((item) => item.store === active);
   return <>
-    {!active && <section className="panel"><details className="editable-list"><summary>＋ Adicionar unidade</summary>
-      <form action={saveUnit} className="admin-form">
-        <label>Nome da unidade<input name="name" maxLength={70} required /></label>
-        <label>Sigla<input name="code" minLength={2} maxLength={8} required /></label>
-        <div className="span-two"><Submit>Cadastrar unidade</Submit></div>
-      </form>
-    </details></section>}
     {!active && <div className="metrics-grid">
       <Metric name="Fixos mensais · todas as lojas" value={totalOf(state.fixedCosts.filter((item) => item.active), (item) => item.amount)} />
       <Metric name="Salários mensais · todas as lojas" value={totalOf(state.staff.filter((item) => item.active), (item) => item.salary)} />
