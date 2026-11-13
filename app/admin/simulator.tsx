@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { cardQuote, money, stores, type CardRate, type Product, type StoreId } from "@/domain/retail";
+import { cardQuote, money, type Store, type CardRate, type Product, type StoreId } from "@/domain/retail";
 
 type StockProduct = Pick<Product, "id" | "name" | "sku" | "price" | "stock">;
 
-export function Simulator({ products, rates, initialStore }: { products: StockProduct[]; rates: CardRate[]; initialStore: StoreId }) {
+export function Simulator({ products, rates, initialStore, stores }: { products: StockProduct[]; rates: CardRate[]; initialStore: StoreId; stores: readonly Store[] }) {
   const [store, setStore] = useState(initialStore);
   const [productId, setProductId] = useState("");
   const [rateId, setRateId] = useState("");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelSale, cardQuote, changeStock, emptyRetailState, isCalendarDate, normalizeCpf, recordPurchase, recordSale, transferStock } from "../domain/retail.ts";
+import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, isCalendarDate, normalizeCpf, recordPurchase, recordSale, stockComposition, transferStock } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -129,4 +129,19 @@ test("configuração rejeita banco da Ampera e hosts não locais", () => {
       else process.env[key] = original[key];
     }
   }
+});
+
+test("classificação de saldo avulso e transferência preservam o total consignado", () => {
+  const state = fixture();
+  state.units = [{ id: "nova", name: "Nova unidade", code: "NV" }];
+  const lot = { purchaseId: "origem", store: "sao-jose", productId: "scooter", quantity: 2,
+    unitCost: 10000, consigned: true, supplier: "Fornecedor", date: "2026-11-07" };
+  classifyLegacyConsignment(state, lot);
+  assert.equal(state.products[0].stock["sao-jose"], 3);
+  assert.throws(() => classifyLegacyConsignment(state, { ...lot, purchaseId: "outro" }));
+  assert.equal(state.ledger.length, 0);
+  transferStock(state, "scooter", "sao-jose", "nova", 1, "transf", date);
+  assert.equal(stockComposition(state, "nova").consigned, 1);
+  assert.equal(stockComposition(state).cost, 20000);
+  assert.equal(stockComposition(state).owned, 2);
 });

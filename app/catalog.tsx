@@ -13,7 +13,7 @@ export const exampleModel: Product = {
 
 export async function readCatalog() {
   const state = await readRetail().catch(() => null);
-  const products = state?.products.filter((item) => item.published && item.category === "Scooter elétrica") ?? [];
+  const products = state?.products.filter((item) => item.published && ["Scooter elétrica", "Bicicleta elétrica"].includes(item.category)) ?? [];
   return { products: products.length ? products : [exampleModel], testimonials: state?.testimonials ?? [] };
 }
 

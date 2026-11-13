@@ -287,3 +287,18 @@ body:has(.model-dialog[open]) { overflow: hidden; }
   .model-dialog-layout, .scooter-fields { grid-template-columns: minmax(0, 1fr); }
   .model-dialog-media { min-height: 240px; }
 }
+
+.sidebar-group { display: grid; gap: .2rem; }
+.sidebar-group > p { padding: .65rem .66rem .25rem; color: #acada1; font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.consignment-chart { padding: 0 1rem 1rem; }
+.consignment-chart p { font-size: .88rem; margin-top: .5rem; }
+.consignment-bar { display: flex; height: .8rem; overflow: hidden; background: #dedfd6; border-radius: 1rem; }
+.consignment-bar span { background: #b17d00; }
+@media (max-width: 850px) {
+  .sidebar-group { display: flex; align-items: center; }
+  .sidebar-group > p { white-space: nowrap; }
+}
+
+.sales-workspace { display: grid; min-width: 0; gap: 1rem; }
+.sales-workspace .admin-form { padding: 1.2rem; }
+.sales-workspace td details[open] .admin-form { min-width: 260px; padding: .65rem 0; }

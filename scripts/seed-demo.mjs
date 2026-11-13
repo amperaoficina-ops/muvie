@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Binary, MongoClient } from "mongodb";
-import { businessDate, emptyRetailState, postMonthlyCosts, recordPurchase, recordSale, transferStock } from "../domain/retail.ts";
+import { businessDate, cancelSale, emptyRetailState, postMonthlyCosts, recordPurchase, recordSale, transferStock } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 import { hashPassword } from "../lib/security.ts";
 
@@ -83,6 +83,30 @@ try {
     const result = await retail.updateOne({ _id: "retail", revision: document.revision }, { $set: { state: demo }, $inc: { revision: 1 } });
     if (!result.modifiedCount) throw new Error("O banco demo mudou durante a carga. Rode o comando novamente.");
     console.log("Exemplos financeiros adicionados às duas unidades.");
+  }
+  const latest = await retail.findOne({ _id: "retail" });
+  const examples = { ...emptyRetailState(), ...latest.state };
+  const bikeId = "00000000-0000-4000-8000-000000000030";
+  const consignmentId = "00000000-0000-4000-8000-000000000031";
+  if (!examples.products.some((product) => product.id === bikeId || product.sku === "DEMO-BIKE-MIX")) {
+    const today = businessDate(now);
+    examples.products.push({ id: bikeId, sku: "DEMO-BIKE-MIX", name: "Bicicleta urbana · Demo",
+      category: "Bicicleta elétrica", price: 590000, published: false, description: "Exemplo fictício de estoque misto.",
+      imageUrl: "", stock: { "sao-jose": 0, palhoca: 0 } });
+    for (const [index, acquisition] of ["consignada", "quitada", "a-pagar"].entries()) {
+      recordPurchase(examples, { id: index === 0 ? consignmentId : randomUUID(), store: index === 2 ? "palhoca" : "sao-jose",
+        productId: bikeId, supplier: "Fornecedor fictício · Demo", contactId: "", quantity: index === 0 ? 4 : 2,
+        unitCost: 380000, date: today, due: today, acquisition, createdAt: ago(0), invoiceNumber: "", notes: "" });
+    }
+    const canceled = randomUUID();
+    for (const [id, mode] of [[randomUUID(), "received"], [randomUUID(), "pending"], [canceled, "pending"]]) {
+      recordSale(examples, { id, store: "sao-jose", productId: bikeId, customer: "Cliente fictício · Demo", contactId: "",
+        quantity: 1, discount: 0, method: "Pix", createdAt: ago(0), origin: consignmentId, receive: { mode, due: today } });
+    }
+    cancelSale(examples, canceled, ago(0));
+    const result = await retail.updateOne({ _id: "retail", revision: latest.revision }, { $set: { state: examples }, $inc: { revision: 1 } });
+    if (!result.modifiedCount) throw new Error("O banco demo mudou durante a carga. Rode o comando novamente.");
+    console.log("Cenários de estoque misto e vendas recebida, a receber e cancelada adicionados.");
   }
   await db.collection("users").createIndex({ email: 1 }, { unique: true });
   await db.collection("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

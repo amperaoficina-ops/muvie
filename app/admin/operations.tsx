@@ -1,4 +1,4 @@
-import { money, stores, type CardRate, type RetailState, type StoreId } from "@/domain/retail";
+import { money, storeList, type CardRate, type RetailState, type StoreId } from "@/domain/retail";
 import { saveRate, saveTestimonial, saveUser } from "./actions";
 import { Submit } from "./submit";
 import { isPrimaryAdmin, roles, type AccountAccess } from "@/domain/access";
@@ -92,8 +92,8 @@ export function Charts({ state, filter }: { state: RetailState; filter: StoreId 
     }).reduce((sum, sale) => sum + sale.total, 0);
     return { label, total };
   });
-  const stock = stores.filter((item) => !filter || item.id === filter).map((item) => ({
-    label: item.name, total: state.products.reduce((sum, product) => sum + product.stock[item.id], 0),
+  const stock = storeList(state).filter((item) => !filter || item.id === filter).map((item) => ({
+    label: item.name, total: state.products.reduce((sum, product) => sum + (product.stock[item.id] ?? 0), 0),
   }));
   return <div className="overview-grid">
     <BarChart title="Vendas nos últimos 28 dias" subtitle="Valores agrupados por semana · líquidos de descontos" rows={weeks} format={money} />

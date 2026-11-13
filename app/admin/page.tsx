@@ -8,12 +8,15 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, money, paymentMethods, stages, storeName, stores,
-  type Contact, type Product, type RetailState, type Sale, type StoreId,
+  balanceDue, money, paymentMethods, stages, stockComposition, storeName, storeList,
+  type Contact, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock } from "./actions";
+import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
+import { SaleCustomer } from "./sale-customer";
+import { StaffPanel } from "./staff";
+import { StockFields } from "./stock-fields";
 import { Submit } from "./submit";
 import { CardSettings, Charts, TestimonialsSettings, UsersPanel } from "./operations";
 import { Simulator } from "./simulator";
@@ -22,20 +25,29 @@ import { canAccess } from "@/domain/access";
 
 const nav = [
   { id: "visao", label: "Visão geral", icon: "grid", description: "Acompanhe o estoque, as vendas e os atendimentos das suas lojas." },
-  { id: "produtos", label: "Produtos", icon: "box", description: "Cadastre scooters, peças e acessórios e escolha o que aparece na landing page." },
-  { id: "estoque", label: "Estoque", icon: "box", description: "Consulte saldos, registre movimentações e transfira produtos entre as duas lojas." },
+  { id: "produtos", label: "Produtos", icon: "box", description: "Cadastre os produtos usados nas compras, no estoque e nas vendas." },
+  { id: "estoque", label: "Estoque", icon: "box", description: "Consulte saldos, registre movimentações e transfira produtos entre unidades." },
   { id: "compras", label: "Compras", icon: "bag", description: "Registre compras, dê entrada na unidade correta e organize as notas de fornecedores." },
   { id: "vendas", label: "Vendas", icon: "bag", description: "Registre vendas por unidade e acompanhe o histórico de cada operação." },
+  { id: "funcionarios", label: "Funcionários", icon: "users", description: "Acompanhe equipe, remuneração, vendas do mês e vales por unidade." },
   { id: "financeiro", label: "Financeiro", icon: "grid", description: "Acompanhe DRE, caixa, contas a pagar e a receber por unidade.", admin: true },
-  { id: "lojas", label: "Administração das lojas", icon: "pin", description: "Configure equipe, custos fixos e estrutura de São José e Palhoça.", admin: true },
+  { id: "lojas", label: "Administração das lojas", icon: "pin", description: "Cadastre unidades e configure equipe, custos fixos e estrutura.", admin: true },
   { id: "crm", label: "Clientes / CRM", icon: "users", description: "Consulte fichas, histórico de compras e vendas, documentos e retornos por unidade." },
   { id: "simulador", label: "Simular venda", icon: "bolt", description: "Monte uma proposta de cartão durante o atendimento com produtos em estoque." },
   { id: "taxas", label: "Taxas de cartão", icon: "bag", description: "Cadastre e ajuste as condições de débito e crédito das maquininhas.", admin: true },
   { id: "usuarios", label: "Usuários", icon: "users", description: "Gerencie o acesso da equipe de atendimento.", admin: true },
   { id: "logs", label: "Log de ações", icon: "grid", description: "Confira as operações registradas e quem as realizou.", admin: true },
+  { id: "consignados", label: "Consignados", icon: "box", description: "Acompanhe os lotes consignados disponíveis por unidade." },
+  { id: "catalogo", label: "Catálogo do site", icon: "box", description: "Escolha quais modelos aparecem na landing page." },
   { id: "relatos", label: "Relatos da landing", icon: "users", description: "Organize os relatos autorizados exibidos no site.", admin: true },
 ] as const;
 type Tab = typeof nav[number]["id"];
+const navGroups: { title: string; tabs: Tab[] }[] = [
+  { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
+  { title: "Gestão", tabs: ["funcionarios", "financeiro", "taxas", "usuarios", "logs"] },
+  { title: "Lojas", tabs: ["lojas"] },
+  { title: "Landing page", tabs: ["catalogo", "relatos"] },
+];
 type Filter = StoreId | "";
 
 function adminUrl(tab: Tab, store: Filter = "") {
@@ -50,8 +62,8 @@ function FilterInput({ filter }: { filter: Filter }) {
   return <input type="hidden" name="filter" value={filter} />;
 }
 
-function StoreField({ filter, label = "Unidade" }: { filter: Filter; label?: string }) {
-  return <label>{label}<select name="store" defaultValue={filter} required><option value="" disabled>Selecione a unidade</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>;
+function StoreField({ filter, units, label = "Unidade" }: { filter: Filter; units: readonly Store[]; label?: string }) {
+  return <label>{label}<select name="store" defaultValue={filter} required><option value="" disabled>Selecione a unidade</option>{units.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>;
 }
 
 function ProductField({ products }: { products: Product[] }) {
@@ -91,11 +103,11 @@ function InvoiceBox({ owner, id, filter, invoices }: { owner: InvoiceOwner; id: 
 function Overview({ state, filter, showSales }: { state: RetailState; filter: Filter; showSales: boolean }) {
   const sales = state.sales.filter((sale) => !sale.canceledAt && (!filter || sale.store === filter));
   const contacts = state.contacts.filter((contact) => (!filter || contact.store === filter) && !["Ganho", "Perdido"].includes(contact.stage));
-  const stock = (store: StoreId) => state.products.reduce((total, product) => total + product.stock[store], 0);
+  const stock = (store: StoreId) => state.products.reduce((total, product) => total + (product.stock[store] ?? 0), 0);
   const metrics = [
     { label: "Vendas registradas", value: sales.length, detail: "Vendas ativas no histórico", icon: "bag" },
     { label: "Valor em vendas", value: money(sales.reduce((sum, sale) => sum + sale.total, 0)), detail: "Total líquido de descontos", icon: "bolt" },
-    { label: "Unidades em estoque", value: filter ? stock(filter) : stock("sao-jose") + stock("palhoca"), detail: state.products.length + " produtos no catálogo interno", icon: "box" },
+    { label: "Unidades em estoque", value: filter ? stock(filter) : storeList(state).reduce((sum, unit) => sum + stock(unit.id), 0), detail: state.products.length + " produtos no catálogo interno", icon: "box" },
     { label: "Atendimentos abertos", value: contacts.length, detail: "Contatos em acompanhamento", icon: "users" },
   ] as const;
   return <>
@@ -103,13 +115,64 @@ function Overview({ state, filter, showSales }: { state: RetailState; filter: Fi
     <Charts state={state} filter={filter} />
     <div className="overview-grid">
       {showSales && <section className="panel"><div className="panel-title"><h2>Vendas recentes</h2><Link className="back-link" href={adminUrl("vendas", filter)}>Ver vendas →</Link></div>
-        {sales.length ? <SalesTable sales={sales.slice(0, 5)} filter={filter} /> : <Empty>As vendas registradas nesta unidade aparecerão aqui.</Empty>}
+        {sales.length ? <SalesTable state={state} sales={sales.slice(0, 5)} filter={filter} /> : <Empty>As vendas registradas nesta unidade aparecerão aqui.</Empty>}
       </section>}
-      <section className="panel"><div className="panel-title"><h2>Suas unidades</h2><span className="pill">02 LOJAS</span></div>
-        <div className="branch-list">{stores.map((store) => <Link href={adminUrl("visao", store.id)} key={store.id}><span className="metric-icon"><Icon name="pin" size={18} /></span><span><strong>{store.name}</strong><small>{stock(store.id)} unidades em estoque</small></span><Icon name="arrow" size={17} /></Link>)}</div>
+      <section className="panel"><div className="panel-title"><h2>Suas unidades</h2><span className="pill">{storeList(state).length} LOJAS</span></div>
+        <div className="branch-list">{storeList(state).map((store) => <Link href={adminUrl("visao", store.id)} key={store.id}><span className="metric-icon"><Icon name="pin" size={18} /></span><span><strong>{store.name}</strong><small>{stock(store.id)} unidades em estoque</small></span><Icon name="arrow" size={17} /></Link>)}</div>
       </section>
     </div>
   </>;
+}
+
+function Consignment({ state, filter, detailed = false, showPurchases = false }: {
+  state: RetailState; filter: Filter; detailed?: boolean; showPurchases?: boolean;
+}) {
+  const { lots, cost } = stockComposition(state, filter);
+  const vehicles = stockComposition(state, filter, true);
+  const bikes = new Set(state.products.filter((product) => product.category === "Bicicleta elétrica").map((product) => product.id));
+  const bikeCount = lots.reduce((total, lot) => total + (bikes.has(lot.productId) ? lot.quantity : 0), 0);
+  const bikeTotal = state.products.filter((product) => bikes.has(product.id)).reduce((sum, product) =>
+    sum + storeList(state).filter((unit) => !filter || unit.id === filter).reduce((total, unit) => total + (product.stock[unit.id] ?? 0), 0), 0);
+  const percent = (quantity: number, total = vehicles.total) => total ? quantity / total * 100 : 0;
+  const format = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+  return <section className="panel">
+    <div className="panel-title"><h2>Consignação no estoque atual</h2>
+      {detailed ? showPurchases && <Link className="back-link" href={adminUrl("compras", filter)}>Registrar entrada em Compras →</Link>
+        : <Link className="back-link" href={adminUrl("consignados", filter)}>Ver lotes →</Link>}
+    </div>
+    <dl className="finance-rows">
+      <div><dt>Valor total consignado a custo de repasse</dt><dd>{money(cost)}</dd></div>
+      <div><dt>Bicicletas e scooters consignadas</dt><dd>{vehicles.consigned} de {vehicles.total} ({bikeCount} bicicleta(s))</dd></div>
+    </dl>
+    <div className="consignment-chart">
+      {vehicles.total > 0 && <div className="consignment-bar" aria-hidden="true"><span style={{ width: percent(vehicles.consigned) + "%" }} /></div>}
+      <p>Consignadas <strong>{format.format(percent(vehicles.consigned))}%</strong> · Próprias ou sem lote <strong>{format.format(percent(vehicles.owned))}%</strong></p>
+      {bikeTotal > 0 && <><div className="consignment-bar" aria-hidden="true"><span style={{ width: percent(bikeCount, bikeTotal) + "%" }} /></div>
+        <p>Só bicicletas · <strong>{format.format(percent(bikeCount, bikeTotal))}%</strong> consignadas · <strong>{format.format(percent(bikeTotal - bikeCount, bikeTotal))}%</strong> próprias ou sem lote</p></>}
+    </div>
+    {detailed && (lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse"]}>
+      {lots.map((lot) => <tr key={lot.purchaseId + lot.store}>
+        <td>{state.products.find((product) => product.id === lot.productId)?.name ?? lot.productId}</td>
+        <td>{storeName(lot.store, state)}</td><td>{lot.supplier}</td><td>{calendarLabel(lot.date)}</td>
+        <td>{lot.quantity} un.</td><td>{money(lot.quantity * lot.unitCost)}</td>
+      </tr>)}
+    </Table> : <Empty>Nenhum lote consignado com saldo nesta seleção.</Empty>)}
+  </section>;
+}
+
+function CatalogSettings({ state }: { state: RetailState }) {
+  const vehicles = state.products.filter((p) => p.category === "Scooter elétrica" || p.category === "Bicicleta elétrica");
+  return <section className="panel">
+    <div className="panel-title"><h2>Modelos no site</h2><Link className="back-link" href="/modelos">Ver catálogo público →</Link></div>
+    {vehicles.length ? <div className="editable-list">{vehicles.map((product) => <details key={product.id}>
+      <summary><strong>{product.name}</strong><span className="pill">{product.published ? "Publicado" : "Oculto"}</span></summary>
+      <form action={savePublication} className="admin-form">
+        <input type="hidden" name="id" value={product.id} />
+        <label className="checkbox"><input type="checkbox" name="published" defaultChecked={product.published} /> Exibir no catálogo público</label>
+        <div><Submit>Salvar publicação</Submit></div>
+      </form>
+    </details>)}</div> : <Empty>Cadastre um modelo em Produtos para publicar no site.</Empty>}
+  </section>;
 }
 
 function ProductForm({ filter, product }: { filter: Filter; product?: Product }) {
@@ -126,7 +189,6 @@ function ProductForm({ filter, product }: { filter: Filter; product?: Product })
     </div>}
     <label className="span-two">{product?.imageUrl ? "Substituir foto" : "Foto do produto"}<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" /><small>JPG, PNG ou WebP, até 5 MB.</small></label>
     <label className="span-two">Descrição<textarea name="description" rows={2} maxLength={350} defaultValue={product?.description} /></label>
-    <label className="checkbox span-two"><input type="checkbox" name="published" defaultChecked={product?.published} /> Exibir este produto na landing page</label>
     <div className="span-two"><Submit>{product ? "Salvar alterações" : "Cadastrar produto"}</Submit></div>
   </form>;
 }
@@ -153,7 +215,7 @@ function Purchases({ state, filter, invoices, focus, productId }: {
       <div className="panel-title"><h2>Histórico de compras</h2><span className="pill">{purchases.length} compras</span></div>
       {purchases.length ? <div className="editable-list">{purchases.map((purchase) => (
         <details key={purchase.id} open={focus === purchase.id}>
-          <summary><span><strong>{purchase.productName}</strong><small>{calendarLabel(purchase.date)} · {storeName(purchase.store)} · {purchase.supplier}</small></span>
+          <summary><span><strong>{purchase.productName}</strong><small>{calendarLabel(purchase.date)} · {storeName(purchase.store, state)} · {purchase.supplier}</small></span>
             <span className="pill">{purchaseStatus(state, purchase.id, purchase.acquisition)}</span><strong>{money(purchase.total)}</strong></summary>
           <div className="record-actions">
             <p>{purchase.sku} · {purchase.quantity} un. × {money(purchase.unitCost)}</p>
@@ -174,9 +236,9 @@ function Purchases({ state, filter, invoices, focus, productId }: {
         <input type="hidden" name="purchaseId" value={purchaseId} />
         <input type="hidden" name="focus" value={purchaseId} />
         <PurchaseProductFields initialId={product?.id} products={state.products.map(({ id, name, sku, category, specs, purchaseCost }) => ({ id, name, sku, category, specs, purchaseCost }))} />
-        <StoreField filter={filter} label="Unidade que recebe o estoque" />
+        <StoreField units={storeList(state)} filter={filter} label="Unidade que recebe o estoque" />
         <label>Fornecedor<input name="supplier" maxLength={100} placeholder="Nome ou razão social" /></label>
-        <label>Cliente vinculado (opcional)<select name="contactId"><option value="">Sem vínculo</option>{state.contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store)}</option>)}</select></label>
+        <label>Cliente vinculado (opcional)<select name="contactId"><option value="">Sem vínculo</option>{state.contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store, state)}</option>)}</select></label>
         <label>Quantidade<input name="quantity" type="number" min="1" max="999999" defaultValue="1" required /></label>
 
         <label>Data da compra<input name="date" type="date" defaultValue={new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date())} required /></label>
@@ -204,88 +266,88 @@ function purchaseStatus(state: RetailState, id: string, condition?: string) {
 }
 
 function Stock({ state, filter }: { state: RetailState; filter: Filter }) {
-  const columns = stores.filter((store) => !filter || filter === store.id);
+  const columns = storeList(state).filter((store) => !filter || filter === store.id);
   const movements = state.movements.filter((movement) => !filter || movement.store === filter);
   const lots = state.stockLots.filter((item) => item.quantity > 0 && (!filter || item.store === filter));
   return <>
     <div className="operation-grid">
       <section className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
-        {state.products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{state.products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku}</small></td>{columns.map((store) => <td key={store.id}>{product.stock[store.id]} un.</td>)}</tr>)}</Table> : <Empty>Cadastre um produto para movimentar o estoque.</Empty>}
+        {state.products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{state.products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku}</small></td>{columns.map((store) => <td key={store.id}>{product.stock[store.id] ?? 0} un.</td>)}</tr>)}</Table> : <Empty>Cadastre um produto para movimentar o estoque.</Empty>}
       </section>
       <section className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
         {state.products.length ? <form action={updateStock} className="admin-form">
-          <FilterInput filter={filter} /><ProductField products={state.products} /><StoreField filter={filter} label="Unidade de origem ou ajuste" />
-          <label>Operação<select name="mode"><option value="entrada">Entrada</option><option value="saida">Saída</option><option value="transferencia">Transferir para a outra loja</option></select></label>
-          <label>Quantidade<input name="quantity" type="number" min="1" max="999999" defaultValue="1" required /></label>
-          <label className="span-two">Motivo da entrada ou saída<input name="reason" maxLength={100} placeholder="Ex.: recebimento de fornecedor" /></label>
-          <div className="span-two"><Submit>Registrar movimentação</Submit></div>
+          <FilterInput filter={filter} /><ProductField products={state.products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
+          <StockFields units={storeList(state)} />
+          <div className="span-two"><Submit>Salvar operação</Submit></div>
         </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
       </section>
     </div>
     <section className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
       {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo"]}>{lots.map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
-        return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{storeName(lot.store)}</td>
-          <td>{lot.supplier}</td><td>{purchaseStatus(state, lot.purchaseId, purchase?.acquisition)}</td><td>{lot.quantity} un.</td></tr>;
+        return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{storeName(lot.store, state)}</td>
+          <td>{lot.supplier}</td><td>{lot.consigned ? "Consignado" : "Próprio"}{purchase && " · " + purchaseStatus(state, lot.purchaseId, purchase.acquisition)}</td><td>{lot.quantity} un.</td></tr>;
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
       <p className="admin-empty">Saldos manuais e registros anteriores podem aparecer no saldo geral sem lote associado.</p>
     </section>
     <section className="panel"><div className="panel-title"><h2>Histórico de movimentações</h2></div>
-      {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
+      {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store, state)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
     </section>
   </>;
 }
 
-function SalesTable({ sales, filter, canCancel = false, invoices = [], focus }: { sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[]; focus?: string }) {
-  return <Table headers={["Venda", "Unidade", "Total", "Status", ...(canCancel ? ["Ação"] : [])]}>{sales.map((sale) =>
-    <tr key={sale.id}>
+function SalesTable({ state, sales, filter, canCancel = false, invoices = [], focus }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[]; focus?: string }) {
+  return <Table headers={["Venda", "Unidade", "Total", "Status", ...(canCancel ? ["Ação"] : [])]}>{sales.map((sale) => {
+    const receivable = state.ledger.find((entry) => entry.saleId === sale.id && entry.kind === "venda");
+    const status = sale.canceledAt ? "Cancelada" : !receivable ? "Registrada" : balanceDue(receivable) > 0 ? "A receber" : "Recebida";
+    return <tr key={sale.id}>
       <td><strong>{sale.customer}</strong><small>{sale.quantity} × {sale.productName} · {dateLabel(sale.createdAt)}</small>{sale.sellerName && <small>Vendedor: {sale.sellerName}</small>}</td>
-      <td>{storeName(sale.store)}</td><td><strong>{money(sale.total)}</strong><small>{sale.method}</small></td>
-      <td><span className={"pill " + (sale.canceledAt ? "" : "green")}>{sale.canceledAt ? "Cancelada" : "Registrada"}</span></td>
+      <td>{storeName(sale.store, state)}</td><td><strong>{money(sale.total)}</strong><small>{sale.method}</small></td>
+      <td><span className={"pill " + (sale.canceledAt ? "" : "green")}>{status}</span></td>
       {canCancel && <td><details className="sale-documents" open={focus === sale.id}><summary>Notas fiscais</summary>
         <InvoiceBox owner="sale" id={sale.id} filter={filter} invoices={invoices} />
       </details>{!sale.canceledAt && <details className="cancel-sale"><summary>Cancelar</summary>
         <form action={reverseSale}><FilterInput filter={filter} /><input type="hidden" name="saleId" value={sale.id} />
-          <p>As unidades voltam ao estoque de {storeName(sale.store)}.</p>
+          <p>As unidades voltam ao estoque de {storeName(sale.store, state)}.</p>
           <label className="checkbox"><input type="checkbox" name="refund" /> Já devolvi o valor recebido, se houver</label>
           <Submit variant="danger">Confirmar</Submit>
         </form></details>}</td>}
-    </tr>)}</Table>;
+    </tr>;
+  })}</Table>;
 }
 
 function Sales({ state, filter, invoices, focus }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string }) {
   const sales = state.sales.filter((sale) => !filter || sale.store === filter);
   const contacts = state.contacts.filter((contact) => !filter || contact.store === filter);
-  const products = state.products.filter((product) => product.price > 0 && (filter ? product.stock[filter] > 0 : stores.some((store) => product.stock[store.id] > 0)));
+  const products = state.products.filter((product) => product.price > 0 && (filter ? product.stock[filter] > 0 : storeList(state).some((store) => product.stock[store.id] > 0)));
   const saleId = randomUUID();
-  return <div className="operation-grid">
-    <section className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable sales={sales} filter={filter} canCancel invoices={invoices} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
+  return <div className="sales-workspace">
     <section className="panel"><div className="panel-title"><h2>Nova venda</h2></div>
       {products.length ? <form className="admin-form" action={saveSale}>
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
-        <StoreField filter={filter} /><ProductField products={products} />
-        <label>Cliente<input name="customer" maxLength={100} placeholder="Nome do cliente" /></label>
-        <label>Cliente cadastrado<select name="contactId"><option value="">Sem vínculo</option>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store)}</option>)}</select></label>
+        <StoreField units={storeList(state)} filter={filter} /><ProductField products={products} />
+        <SaleCustomer contacts={contacts.map((contact) => ({ id: contact.id, label: contact.name + " · " + storeName(contact.store, state) }))} />
         <label>Quantidade<input name="quantity" type="number" min="1" max="999999" defaultValue="1" required /></label>
         <label>Desconto em reais<input name="discount" type="number" min="0" step=".01" placeholder="0,00" /></label>
         <label className="span-two">Forma de pagamento<select name="method">{paymentMethods.map((item) => <option key={item}>{item}</option>)}</select></label>
         <label>Vendedor da unidade<select name="sellerId"><option value="">Sem vendedor</option>
-          {state.staff.filter((item) => item.active && (!filter || item.store === filter)).map((item) => <option key={item.id} value={item.id}>{item.name} · {storeName(item.store)}</option>)}
+          {state.staff.filter((item) => item.active && (!filter || item.store === filter)).map((item) => <option key={item.id} value={item.id}>{item.name} · {storeName(item.store, state)}</option>)}
         </select></label>
         <label>Recebimento<select name="receive" defaultValue="" required><option value="" disabled>Selecione</option><option value="received">Já recebido</option><option value="pending">A receber</option></select></label>
         <label>Vencimento (se a receber)<input name="due" type="date" /></label>
         <label className="span-two">Origem do estoque<select name="origin"><option value="">Automática · lote mais antigo</option><option value="legacy">Saldo avulso / sem lote</option>
           {state.stockLots.filter((lot) => lot.quantity > 0 && (!filter || lot.store === filter)).map((lot) => <option key={lot.purchaseId + lot.store} value={lot.purchaseId}>
-            {state.products.find((item) => item.id === lot.productId)?.name} · {storeName(lot.store)} · {lot.consigned ? "Consignada" : "Própria"} · {lot.supplier} · {calendarLabel(lot.date)} · {lot.quantity} un.
+            {state.products.find((item) => item.id === lot.productId)?.name} · {storeName(lot.store, state)} · {lot.consigned ? "Consignada" : "Própria"} · {lot.supplier} · {calendarLabel(lot.date)} · {lot.quantity} un.
           </option>)}
         </select><small>Quando houver estoque próprio e consignado do mesmo modelo, escolha a origem da moto vendida.</small></label>
         <div className="span-two"><Submit>Registrar venda</Submit></div>
       </form> : <Empty>Para registrar uma venda, cadastre um produto com preço e adicione saldo à unidade em <Link href={adminUrl("estoque", filter)}>Estoque</Link>.</Empty>}
     </section>
+    <section className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable state={state} sales={sales} filter={filter} canCancel invoices={invoices} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
   </div>;
 }
 
-function ContactForm({ filter, contact }: { filter: Filter; contact?: Contact }) {
+function ContactForm({ filter, contact, state }: { filter: Filter; contact?: Contact; state: RetailState }) {
   return <form className="admin-form" action={saveContact}>
     <FilterInput filter={filter} />{contact && <><input type="hidden" name="id" value={contact.id} /><input type="hidden" name="focus" value={contact.id} /></>}
     <label>Nome<input name="name" maxLength={100} defaultValue={contact?.name} required /></label>
@@ -293,7 +355,7 @@ function ContactForm({ filter, contact }: { filter: Filter; contact?: Contact })
     <label>E-mail<input name="email" type="email" maxLength={254} defaultValue={contact?.email} /></label>
     <label>CPF<input name="cpf" inputMode="numeric" maxLength={20} defaultValue={contact?.cpf} placeholder="000.000.000-00" /></label>
     <label>Data de nascimento<input name="birthDate" type="date" min="1900-01-01" defaultValue={contact?.birthDate} /></label>
-    <StoreField filter={contact?.store ?? filter} />
+    <StoreField units={storeList(state)} filter={contact?.store ?? filter} />
     <fieldset className="address-fields span-two">
       <legend>Endereço</legend>
       <label>CEP<input name="postalCode" inputMode="numeric" maxLength={9} defaultValue={contact?.address?.postalCode} /></label>
@@ -320,14 +382,14 @@ function CRM({ state, filter, invoices, focus, showSales, showPurchases }: {
     <div className="pipeline">{stages.map((stage) => <article className="panel" key={stage}><p>{stage}</p><strong>{list.filter((item) => item.stage === stage).length}</strong></article>)}</div>
     <div className="operation-grid"><section className="panel"><div className="panel-title"><h2>Clientes e oportunidades</h2></div>
       {list.length ? <div className="editable-list">{list.map((contact) => <details key={contact.id} open={focus === contact.id}>
-        <summary><span><strong>{contact.name}</strong><small>{storeName(contact.store)}{contact.interest ? " · " + contact.interest : ""}{contact.nextContact ? " · Retorno " + contact.nextContact.split("-").reverse().join("/") : ""}</small></span><span className="pill">{contact.stage}</span></summary>
-        <ContactForm filter={filter} contact={contact} />
+        <summary><span><strong>{contact.name}</strong><small>{storeName(contact.store, state)}{contact.interest ? " · " + contact.interest : ""}{contact.nextContact ? " · Retorno " + contact.nextContact.split("-").reverse().join("/") : ""}</small></span><span className="pill">{contact.stage}</span></summary>
+        <ContactForm state={state} filter={filter} contact={contact} />
         <InvoiceBox owner="client" id={contact.id} filter={filter} invoices={invoices} />
         {(showSales || showPurchases) && <section className="invoice-box"><h3>Histórico vinculado</h3>
           <ClientHistory state={state} contact={contact} invoices={invoices} showSales={showSales} showPurchases={showPurchases} />
         </section>}
       </details>)}</div> : <Empty>Adicione um contato para acompanhar a próxima conversa ou proposta.</Empty>}
-    </section><section className="panel"><div className="panel-title"><h2>Novo cliente</h2></div><ContactForm filter={filter} /></section></div>
+    </section><section className="panel"><div className="panel-title"><h2>Novo cliente</h2></div><ContactForm state={state} filter={filter} /></section></div>
   </>;
 }
 
@@ -345,7 +407,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
   if (!records.length) return <p className="form-note">Compras e vendas vinculadas a este cliente aparecem aqui.</p>;
   return <ul className="client-history">{records.map((record) => <li key={record.id}>
     <Link className="back-link" href={adminUrl(record.tab, record.store) + "&ficha=" + record.id}>{record.kind} · {record.productName}</Link>
-    <p>{record.date} · {storeName(record.store)} · {money(record.total)}{record.canceled && " · Cancelada"}</p>
+    <p>{record.date} · {storeName(record.store, state)} · {money(record.total)}{record.canceled && " · Cancelada"}</p>
     <InvoiceLinks invoices={invoices.filter((invoice) => invoice.owner === record.owner && invoice.ownerId === record.id)} />
   </li>)}</ul>;
 }
@@ -362,7 +424,6 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   if (!active) return <main className="admin-content"><h1>Acesso ao painel</h1><p>Nenhum módulo está liberado para esta conta.</p><form action={signOut}><button className="button yellow">Sair</button></form></main>;
   const showSales = canAccess(user, "vendas");
   const showPurchases = canAccess(user, "compras");
-  const filter: Filter = stores.find((store) => store.id === params.loja)?.id ?? "";
   const period = reportPeriod(params.inicio, params.fim);
   const periodQuery = active.id === "financeiro" || active.id === "visao" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to }) : "";
   const showInvoices = ["compras", "vendas", "crm"].includes(active.id);
@@ -374,10 +435,17 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     }).sort({ name: 1 }).toArray()).catch(() => null) : [],
   ]);
 
+  const filter: Filter = storeList(state ?? undefined).find((store) => store.id === params.loja)?.id ?? "";
+
   return <div className="admin-shell">
     <aside className="sidebar">
       <Brand href="/admin" /><span className="sidebar-label">GESTÃO DA LOJA</span>
-      <nav aria-label="Módulos do painel">{visibleNav.map((item) => <Link aria-current={active.id === item.id ? "page" : undefined} href={adminUrl(item.id, filter)} key={item.id}><Icon name={item.icon} size={19} />{item.label}</Link>)}</nav>
+      <nav aria-label="Módulos do painel">{navGroups.map(({ title, tabs }) => {
+        const items = tabs.flatMap((id) => visibleNav.filter((item) => item.id === id));
+        return items.length > 0 && <div className="sidebar-group" key={title}>
+          <p>{title}</p>{items.map((item) => <Link aria-current={active.id === item.id ? "page" : undefined} href={adminUrl(item.id, filter)} key={item.id}><Icon name={item.icon} size={19} />{item.label}</Link>)}
+        </div>;
+      })}</nav>
       <Link className="sidebar-footer" href="/">Ver landing page <Icon name="external" size={16} /></Link>
     </aside>
     <div className="admin-main">
@@ -385,24 +453,27 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">OPERAÇÃO MULTILOJA</p><h1>{denied ? "Acesso restrito" : active.label}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
-          {!denied && !["taxas", "usuarios", "logs", "relatos", "simulador"].includes(active.id) && <nav className="branch-filter" aria-label="Filtrar por unidade">
+          {!denied && !["taxas", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <nav className="branch-filter" aria-label={active.id === "lojas" ? "Selecionar loja" : "Filtrar por unidade"}>
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery}>Todas</Link>
-            {stores.map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery} key={store.id}>{store.name}</Link>)}
+            {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery} key={store.id}>{store.name}</Link>)}
           </nav>}
         </div>
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
         {state && !invoices && <p className="feedback error" role="alert">Não foi possível carregar os anexos de notas fiscais.</p>}
         {denied ? <Link className="back-link" href={adminUrl(active.id)}>Abrir {active.label} →</Link> : !state ? <p className="feedback error" role="alert">Não foi possível ler o banco de dados local. Confira a conexão com o MongoDB.</p> : <>
-          {active.id === "visao" && <><Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} /><Overview state={state} filter={filter} showSales={showSales} /></>}
+          {active.id === "visao" && <><Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} />{canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }<Overview state={state} filter={filter} showSales={showSales} /></>}
           {active.id === "produtos" && <Products products={state.products} filter={filter} />}
+          {active.id === "catalogo" && <CatalogSettings state={state} />}
+          {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <Stock state={state} filter={filter} />}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <Sales state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} />}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
+          {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "crm" && <CRM state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
-          {active.id === "simulador" && <Simulator key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates}
+          {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates}
             products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))} />}
           {active.id === "taxas" && <CardSettings state={state} />}
           {active.id === "relatos" && <TestimonialsSettings state={state} />}

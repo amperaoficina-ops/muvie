@@ -4,10 +4,12 @@ export const stores = [
   { id: "sao-jose", name: "São José", code: "SJ" },
   { id: "palhoca", name: "Palhoça", code: "PH" },
 ] as const;
-export type StoreId = (typeof stores)[number]["id"];
+export type StoreId = string;
+export type Store = { id: StoreId; name: string; code: string };
 export const acquisitionTypes = ["quitada", "a-pagar", "consignada"] as const;
 export type Acquisition = typeof acquisitionTypes[number];
 export type Staff = { id: string; name: string; store: StoreId; job: string; salary: number; commissionBps: number; active: boolean };
+export type StaffAdvance = { id: string; staffId: string; store: StoreId; date: string; amount: number; notes: string };
 export type FixedCost = { id: string; name: string; store: StoreId; amount: number; day: number; active: boolean };
 export type Asset = { id: string; name: string; store: StoreId; quantity: number; amount: number; notes: string };
 export type LedgerEntry = {
@@ -19,7 +21,7 @@ export type LedgerEntry = {
 export type StockLot = { purchaseId: string; productId: string; store: StoreId; quantity: number; unitCost: number; consigned: boolean; supplier: string; date: string };
 export const stages = ["Novo", "Em atendimento", "Proposta", "Ganho", "Perdido"] as const;
 export const paymentMethods = ["Pix", "Cartão", "Dinheiro", "Financiamento"] as const;
-export const productCategories = ["Scooter elétrica", "Acessório", "Peça"] as const;
+export const productCategories = ["Scooter elétrica", "Bicicleta elétrica", "Acessório", "Peça"] as const;
 export type CardRate = { id: string; name: string; mode: "Débito" | "Crédito"; installments: number; basisPoints: number };
 export type AuditEvent = { id: string; actor: string; action: string; at: string };
 export type Testimonial = { id: string; author: string; quote: string };
@@ -55,6 +57,8 @@ export type Movement = {
   reason: string; createdAt: string; reference?: string;
 };
 export type RetailState = {
+  units?: Store[];
+  staffAdvances?: StaffAdvance[];
   products: Product[]; contacts: Contact[]; sales: Sale[]; movements: Movement[]; purchases: Purchase[];
   cardRates: CardRate[]; audit: AuditEvent[]; testimonials: Testimonial[];
   staff: Staff[]; fixedCosts: FixedCost[]; assets: Asset[]; ledger: LedgerEntry[]; stockLots: StockLot[];
@@ -64,7 +68,20 @@ export const emptyRetailState = (): RetailState => ({
   staff: [], fixedCosts: [], assets: [], ledger: [], stockLots: [],
 });
 export const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
-export const storeName = (id: StoreId) => stores.find((store) => store.id === id)?.name ?? id;
+export const storeList = (state?: Pick<RetailState, "units">): readonly Store[] => [...stores, ...(state?.units ?? [])];
+export const storeName = (id: StoreId, state?: Pick<RetailState, "units">) => storeList(state).find((store) => store.id === id)?.name ?? id;
+
+export function stockComposition(state: RetailState, filter = "", vehiclesOnly = false) {
+  const products = state.products.filter((product) => !vehiclesOnly || product.category === "Scooter elétrica" || product.category === "Bicicleta elétrica");
+  const ids = new Set(products.map((product) => product.id));
+  const lots = state.stockLots.filter((lot) => lot.consigned && lot.quantity > 0 && ids.has(lot.productId) && (!filter || lot.store === filter));
+  const total = products.reduce((sum, product) => sum + storeList(state)
+    .filter((store) => !filter || store.id === filter)
+    .reduce((count, store) => count + (product.stock[store.id] ?? 0), 0), 0);
+  const consigned = lots.reduce((sum, lot) => sum + lot.quantity, 0);
+  return { lots, total, consigned, owned: total - consigned,
+    cost: lots.reduce((sum, lot) => sum + lot.quantity * lot.unitCost, 0) };
+}
 
 export class RetailError extends Error {}
 
@@ -221,12 +238,24 @@ export function changeStock(
   reason: string, movementId: string, createdAt: string, reference?: string,
 ) {
   const product = productById(state, productId);
-  const balance = product.stock[store] + quantity;
+  const balance = (product.stock[store] ?? 0) + quantity;
   if (!Number.isSafeInteger(quantity) || quantity === 0) throw new RetailError("Informe uma quantidade válida.");
   if (!Number.isSafeInteger(balance) || balance < 0) throw new RetailError("Saldo insuficiente nesta unidade.");
   if (quantity < 0 && !reference) takeLots(state, productId, store, -quantity);
   product.stock[store] = balance;
   state.movements.unshift({ id: movementId, store, productId, productName: product.name, quantity, reason, createdAt, reference });
+}
+
+export function classifyLegacyConsignment(state: RetailState, lot: StockLot) {
+  const product = productById(state, lot.productId);
+  const tracked = state.stockLots.filter((item) => item.productId === lot.productId && item.store === lot.store)
+    .reduce((sum, item) => sum + item.quantity, 0);
+  const available = (product.stock[lot.store] ?? 0) - tracked;
+  if (!Number.isSafeInteger(lot.quantity) || lot.quantity <= 0 || lot.quantity > available) {
+    throw new RetailError("A quantidade supera o saldo avulso desta unidade. Confira os lotes já registrados.");
+  }
+  if (!Number.isSafeInteger(lot.unitCost * lot.quantity) || lot.unitCost <= 0) throw new RetailError("Informe o custo de repasse.");
+  addLot(state, lot);
 }
 
 export function transferStock(
@@ -235,9 +264,9 @@ export function transferStock(
   if (from === to) throw new RetailError("Selecione unidades diferentes.");
   if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new RetailError("Informe uma quantidade válida.");
   const product = productById(state, productId);
-  if (!Number.isSafeInteger(product.stock[to] + quantity)) throw new RetailError("Saldo de destino acima do limite.");
-  changeStock(state, productId, from, -quantity, "Transferência para " + storeName(to), id + "-out", date, id);
-  changeStock(state, productId, to, quantity, "Transferência de " + storeName(from), id + "-in", date, id);
+  if (!Number.isSafeInteger((product.stock[to] ?? 0) + quantity)) throw new RetailError("Saldo de destino acima do limite.");
+  changeStock(state, productId, from, -quantity, "Transferência para " + storeName(to, state), id + "-out", date, id);
+  changeStock(state, productId, to, quantity, "Transferência de " + storeName(from, state), id + "-in", date, id);
   const { result } = takeLots(state, productId, from, quantity);
   for (const lot of result) addLot(state, { ...lot, store: to });
 }
@@ -297,7 +326,7 @@ export function recordSale(state: RetailState, input: SaleInput) {
     throw new RetailError("Informe um vencimento igual ou posterior à venda.");
   }
   const lots = state.stockLots.filter((lot) => lot.productId === product.id && lot.store === input.store && lot.quantity > 0);
-  const legacyUnits = product.stock[input.store] - lots.reduce((sum, lot) => sum + lot.quantity, 0);
+  const legacyUnits = (product.stock[input.store] ?? 0) - lots.reduce((sum, lot) => sum + lot.quantity, 0);
   const selectedLot = lots.find((lot) => lot.purchaseId === input.origin);
   if (input.origin === "legacy" && legacyUnits < input.quantity) throw new RetailError("Saldo avulso insuficiente.");
   if (input.origin && input.origin !== "legacy" && (!selectedLot || selectedLot.quantity < input.quantity)) {

@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
-import { balanceDue, businessDate, financialReport, isCalendarDate, money, salesRanking, storeName, stores,
+import { balanceDue, businessDate, financialReport, isCalendarDate, money, salesRanking, storeName, storeList,
   type Asset, type FixedCost, type LedgerEntry, type RetailState, type Staff, type StoreId } from "@/domain/retail";
-import { launchMonth, saveLedgerEntry, saveStoreItem, updateLedger } from "./actions";
+import { launchMonth, saveLedgerEntry, saveStoreItem, saveUnit, updateLedger } from "./actions";
 import { Submit } from "./submit";
 
 type Filter = StoreId | "";
@@ -75,11 +75,18 @@ export function StoresPanel({ state, filter, showSales }: { state: RetailState; 
   const fixed = state.fixedCosts.filter((item) => item.store === active);
   const assets = state.assets.filter((item) => item.store === active);
   return <>
+    {!active && <section className="panel"><details className="editable-list"><summary>＋ Adicionar unidade</summary>
+      <form action={saveUnit} className="admin-form">
+        <label>Nome da unidade<input name="name" maxLength={70} required /></label>
+        <label>Sigla<input name="code" minLength={2} maxLength={8} required /></label>
+        <div className="span-two"><Submit>Cadastrar unidade</Submit></div>
+      </form>
+    </details></section>}
     {!active && <div className="metrics-grid">
       <Metric name="Fixos mensais · todas as lojas" value={totalOf(state.fixedCosts.filter((item) => item.active), (item) => item.amount)} />
       <Metric name="Salários mensais · todas as lojas" value={totalOf(state.staff.filter((item) => item.active), (item) => item.salary)} />
     </div>}
-    <div className="overview-grid">{stores.filter((store) => !active || store.id === active).map((store) => {
+    <div className="overview-grid">{storeList(state).filter((store) => !active || store.id === active).map((store) => {
       const costs = totalOf(state.fixedCosts.filter((item) => item.store === store.id && item.active), (item) => item.amount);
       const team = state.staff.filter((item) => item.store === store.id && item.active);
       return <section key={store.id} className="panel"><div className="panel-title"><h2>{store.name}</h2><Link className="back-link" href={"/admin?tab=lojas&loja=" + store.id}>{active === store.id ? "Unidade selecionada" : "Abrir unidade →"}</Link></div>
@@ -89,25 +96,25 @@ export function StoresPanel({ state, filter, showSales }: { state: RetailState; 
         </div>
       </section>;
     })}</div>
-    {!active ? <p className="admin-empty panel">Selecione São José ou Palhoça para editar equipe, custos fixos e estrutura ou lançar a competência mensal.</p> : <>
-    <section className="panel"><div className="panel-title"><h2>Competência mensal · {storeName(active)}</h2></div>
+    {!active ? <p className="admin-empty panel">Selecione uma unidade para editar equipe, custos fixos e estrutura ou lançar a competência mensal.</p> : <>
+    <section className="panel"><div className="panel-title"><h2>Competência mensal · {storeName(active, state)}</h2></div>
       <form className="admin-form" action={launchMonth}><HiddenFilter filter={active} /><input type="hidden" name="store" value={active} />
         <label>Mês de referência<input name="month" type="month" defaultValue={today().slice(0, 7)} required /></label>
         <div><Submit>Lançar fixos e salários</Submit></div>
         <p className="form-note span-two">Gera compromissos mensais uma vez por cadastro. Depois, registre as baixas no Financeiro.</p>
       </form>
     </section>
-    <StoreSection title="Equipe e vendedores" kind="staff" store={active} items={staff} />
-    <StoreSection title="Custos fixos" kind="fixed" store={active} items={fixed} />
-    <StoreSection title="Estrutura da loja" kind="asset" store={active} items={assets} />
+    <StoreSection title="Equipe e vendedores" kind="staff" state={state} store={active} items={staff} />
+    <StoreSection title="Custos fixos" kind="fixed" state={state} store={active} items={fixed} />
+    <StoreSection title="Estrutura da loja" kind="asset" state={state} store={active} items={assets} />
     </>}
   </>;
 }
 
 type StoreItem = Staff | FixedCost | Asset;
 type StoreKind = "staff" | "fixed" | "asset";
-function StoreSection({ title, kind, store, items }: { title: string; kind: StoreKind; store: StoreId; items: StoreItem[] }) {
-  return <section className="panel"><div className="panel-title"><h2>{title} · {storeName(store)}</h2></div>
+function StoreSection({ title, kind, store, items, state }: { state: RetailState; title: string; kind: StoreKind; store: StoreId; items: StoreItem[] }) {
+  return <section className="panel"><div className="panel-title"><h2>{title} · {storeName(store, state)}</h2></div>
     <div className="editable-list">{items.map((item) => <details key={item.id}><summary><span><strong>{item.name}</strong>
       <small>{"job" in item ? item.job + " · " + money(item.salary) + " · " + (item.commissionBps / 100) + "% de comissão"
         : "quantity" in item ? item.quantity + " un. · " + money(item.amount) : money(item.amount) + " / mês · dia " + item.day}
@@ -121,12 +128,15 @@ function Currency({ name, label, value, required = false }: { name: string; labe
   return <label>{label}<input name={name} type="number" min={required ? ".01" : "0"} step=".01" max="99999999.99" required={required} defaultValue={value == null ? "" : value / 100} /></label>;
 }
 
-function StoreItemForm({ kind, store, item }: { kind: StoreKind; store: StoreId; item?: StoreItem }) {
+export function StoreItemForm({ kind, store, item, staffPage = false, units = [] }: { kind: StoreKind; store: StoreId; item?: StoreItem; staffPage?: boolean; units?: ReturnType<typeof storeList> }) {
   const staff = item && "job" in item ? item : undefined;
   const fixed = item && "day" in item ? item : undefined;
   const asset = item && "quantity" in item ? item : undefined;
   return <form className="admin-form" action={saveStoreItem}>
-    <HiddenFilter filter={store} /><input type="hidden" name="store" value={store} /><input type="hidden" name="kind" value={kind} /><input type="hidden" name="id" value={item?.id ?? ""} />
+    <HiddenFilter filter={store} />{staffPage && <input type="hidden" name="staffPage" value="1" />}
+    {staffPage && !item ? <label>Unidade<select name="store" defaultValue={store} required>
+      <option value="" disabled>Selecione a unidade</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+    </select></label> : <input type="hidden" name="store" value={store} />}<input type="hidden" name="kind" value={kind} /><input type="hidden" name="id" value={item?.id ?? ""} />
     <label>Nome<input name="name" maxLength={100} defaultValue={item?.name} required /></label>
     {kind === "staff" && <>
       <label>Cargo<input name="job" maxLength={70} defaultValue={staff?.job ?? "Vendedor"} required /></label>
@@ -174,7 +184,7 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
       <form className="admin-form" action={saveLedgerEntry}><HiddenFilter filter={filter} /><input type="hidden" name="entryId" value={randomUUID()} />
         <input type="hidden" name="inicio" value={period.from} /><input type="hidden" name="fim" value={period.to} />
         <label>Descrição<input name="name" maxLength={120} required placeholder="Ex.: internet, impostos ou serviço prestado" /></label>
-        <label>Unidade<select name="store" defaultValue={filter} required><option value="">Selecione</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
+        <label>Unidade<select name="store" defaultValue={filter} required><option value="">Selecione</option>{storeList(state).map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
         <label>Tipo<select name="direction"><option value="out">A pagar · despesa</option><option value="in">A receber · outra receita</option></select></label>
         <label>Classificação<select name="classification"><option value="operacional">Operacional · DRE e caixa</option><option value="somente-caixa">Somente caixa · ex.: aporte ou investimento</option></select></label>
         <Currency name="amount" label="Valor (R$)" required />
@@ -183,15 +193,15 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
         <div className="span-two"><Submit>Lançar compromisso</Submit></div>
       </form>
     </section>
-    <LedgerList title="Compromissos em aberto" entries={open} filter={filter} period={period} />
-    <LedgerList title="Compromissos encerrados com movimentação no período" entries={closed} filter={filter} period={period} />
+    <LedgerList state={state} title="Compromissos em aberto" entries={open} filter={filter} period={period} />
+    <LedgerList state={state} title="Compromissos encerrados com movimentação no período" entries={closed} filter={filter} period={period} />
   </>;
 }
 
-function LedgerList({ title, entries, filter, period }: { title: string; entries: LedgerEntry[]; filter: Filter; period: Period }) {
+function LedgerList({ title, entries, filter, period, state }: { state: RetailState; title: string; entries: LedgerEntry[]; filter: Filter; period: Period }) {
   return <section className="panel"><div className="panel-title"><h2>{title}</h2></div>
     <div className="editable-list">{entries.length ? entries.map((entry) => <details key={entry.id}>
-      <summary><span><strong>{entry.name}</strong><small>{storeName(entry.store)} · {labels[entry.kind]} · vence {shortDate(entry.due)}</small></span>
+      <summary><span><strong>{entry.name}</strong><small>{storeName(entry.store, state)} · {labels[entry.kind]} · vence {shortDate(entry.due)}</small></span>
         <span className="pill">{entry.canceled ? "Cancelado" : balanceDue(entry) ? (entry.direction === "in" ? "A receber" : "A pagar") : "Baixado"}</span>
         <strong>{money(balanceDue(entry) || entry.amount)}</strong></summary>
       {!entry.canceled && balanceDue(entry) > 0 && <>

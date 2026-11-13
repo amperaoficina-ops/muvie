@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordSale,
-  postMonthlyCosts, reverseSettlement, settleEntry, RetailError, stages, stores, transferStock, type RetailState,
+  acquisitionTypes, cancelSale, changeStock, classifyLegacyConsignment, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordSale,
+  postMonthlyCosts, reverseSettlement, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
@@ -16,7 +16,7 @@ import { storeProductPhoto } from "@/lib/product-photos";
 import { invoiceKinds, invoiceOwners, storeInvoice } from "@/lib/invoices";
 import { editRetail, readRetail } from "@/lib/retail-store";
 
-const storeIds = stores.map((store) => store.id);
+const storeIds = (state: RetailState) => storeList(state).map((store) => store.id);
 type Tab = Module;
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const localToday = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date());
@@ -67,7 +67,7 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
     const date = form.get(key);
     if (typeof date === "string" && isCalendarDate(date)) params.set(key, date);
   }
-  if (storeIds.some((store) => store === filter)) params.set("loja", String(filter));
+  if (typeof filter === "string" && /^[a-z0-9-]{1,60}$/.test(filter)) params.set("loja", String(filter));
   const focus = form.get("focus");
   if (typeof focus === "string" && uuidPattern.test(focus)) params.set("ficha", focus);
   try {
@@ -87,7 +87,7 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
 }
 
 function commit(form: FormData, tab: Tab, message: string, edit: (state: RetailState) => void) {
-  return runAction(form, tab, message, (user) => editWithAudit(user, message, edit), tab === "produtos" || tab === "relatos");
+  return runAction(form, tab, message, (user) => editWithAudit(user, message, edit), tab === "produtos" || tab === "relatos" || tab === "catalogo");
 }
 
 function editWithAudit(user: User, action: string, edit: (state: RetailState) => void) {
@@ -117,7 +117,7 @@ export async function saveProduct(form: FormData) {
       price: amount(form, "price"),
       purchaseCost: value(form, "purchaseCost", 12, false) ? amount(form, "purchaseCost") : null,
       description: value(form, "description", 350, false),
-      published: form.get("published") === "on", imageUrl,
+      published: current?.published ?? false, imageUrl,
     };
     if (current) Object.assign(current, fields);
     else state.products.push({ id: newId, ...fields, stock: { "sao-jose": 0, palhoca: 0 } });
@@ -195,23 +195,37 @@ export async function updateStock(form: FormData) {
   const id = randomUUID();
   const date = new Date().toISOString();
   await commit(form, "estoque", "Estoque atualizado.", (state) => {
-    const mode = choice(form, "mode", ["entrada", "saida", "transferencia"]);
+    const mode = choice(form, "mode", ["entrada", "saida", "transferencia", "consignada", "classificar"]);
     const product = value(form, "productId");
-    const store = choice(form, "store", storeIds);
+    const store = choice(form, "store", storeIds(state));
     const quantity = units(form);
-    if (mode === "transferencia") transferStock(state, product, store, store === "palhoca" ? "sao-jose" : "palhoca", quantity, id, date);
+    if (mode === "transferencia") transferStock(state, product, store, choice(form, "destination", storeIds(state)), quantity, id, date);
+    else if (mode === "classificar") classifyLegacyConsignment(state, { purchaseId: id, productId: product, store, quantity,
+      unitCost: amount(form, "unitCost"), supplier: value(form, "supplier", 100), date: localToday(), consigned: true });
+    else if (mode === "consignada") recordPurchase(state, { id, store, productId: product, supplier: value(form, "supplier", 100), contactId: "", quantity, unitCost: amount(form, "unitCost"), date: localToday(), createdAt: date, invoiceNumber: "", notes: "Entrada pelo estoque", acquisition: "consignada" });
     else changeStock(state, product, store, mode === "entrada" ? quantity : -quantity, value(form, "reason", 100), id, date);
   });
 }
 
 export async function saveSale(form: FormData) {
+  const newContactId = randomUUID();
   const createdAt = new Date().toISOString();
   await commit(form, "vendas", "Venda registrada.", (state) => {
     const id = value(form, "saleId", 36);
-    if (!/^[a-f0-9-]{36}$/.test(id)) throw new RetailError("Reabra o formulário de venda.");
+    if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário de venda.");
+    if (state.sales.some((sale) => sale.id === id)) return;
+    const store = choice(form, "store", storeIds(state));
+    const mode = form.has("customerMode") ? choice(form, "customerMode", ["existing", "new", "walk-in"]) : "walk-in";
+    let contactId = value(form, "contactId", 36, mode === "existing");
+    const customer = mode === "existing" ? "" : value(form, "customer", 100, mode === "new");
+    if (mode === "new") {
+      const { email, cpf } = contactIdentity(form, state);
+      contactId = newContactId;
+      state.contacts.unshift({ id: contactId, name: customer, phone: value(form, "phone", 32, false), email, cpf,
+        store, stage: "Ganho", interest: "", nextContact: "", notes: "", createdAt });
+    }
     recordSale(state, {
-      id, store: choice(form, "store", storeIds), productId: value(form, "productId"),
-      customer: value(form, "customer", 100, false), contactId: value(form, "contactId", 36, false),
+      id, store, productId: value(form, "productId"), customer, contactId,
       quantity: units(form), discount: amount(form, "discount"),
       method: choice(form, "method", paymentMethods), createdAt,
       sellerId: value(form, "sellerId", 36, false),
@@ -231,7 +245,7 @@ export async function savePurchase(form: FormData) {
     const productId = value(form, "productId");
     const product = state.products.find((item) => item.id === productId);
     recordPurchase(state, {
-      id, date, createdAt, store: choice(form, "store", storeIds), productId,
+      id, date, createdAt, store: choice(form, "store", storeIds(state)), productId,
       ...(product?.category === scooterCategory && { specs: readScooterSpecs(form) }),
       supplier: value(form, "supplier", 100, false), contactId: value(form, "contactId", 36, false),
       quantity: units(form), unitCost: amount(form, "unitCost"),
@@ -272,9 +286,11 @@ function requiredDate(form: FormData, key: string, allowFuture = false) {
 
 export async function saveStoreItem(form: FormData) {
   const newId = randomUUID();
-  await commit(form, "lojas", "Cadastro da unidade atualizado.", (state) => {
-    const store = choice(form, "store", storeIds);
+  const tab = form.get("staffPage") === "1" ? "funcionarios" : "lojas";
+  await commit(form, tab, "Cadastro da unidade atualizado.", (state) => {
+    const store = choice(form, "store", storeIds(state));
     const kind = choice(form, "kind", ["staff", "fixed", "asset"]);
+    if (tab === "funcionarios" && kind !== "staff") throw new RetailError("Selecione um cadastro de funcionário.");
     const id = value(form, "id", 36, false);
     const fields = { id: id || newId, store, name: value(form, "name", 100) };
     if (kind === "staff") {
@@ -307,7 +323,7 @@ export async function saveStoreItem(form: FormData) {
 export async function launchMonth(form: FormData) {
   await commit(form, "lojas", "Custos fixos e salários do mês lançados. Lançamentos existentes foram preservados.", (state) => {
     const month = value(form, "month", 7);
-    postMonthlyCosts(state, choice(form, "store", storeIds), month);
+    postMonthlyCosts(state, choice(form, "store", storeIds(state)), month);
   });
 }
 
@@ -322,7 +338,7 @@ export async function saveLedgerEntry(form: FormData) {
     const due = requiredDate(form, "due", true);
     const total = amount(form, "amount");
     if (total <= 0 || due < date) throw new RetailError("Informe valor positivo e vencimento a partir da data do lançamento.");
-    state.ledger.unshift({ id, store: choice(form, "store", storeIds), name: value(form, "name", 120),
+    state.ledger.unshift({ id, store: choice(form, "store", storeIds(state)), name: value(form, "name", 120),
       direction, kind: classification === "somente-caixa" ? "ajuste" : direction === "in" ? "outra-receita" : "despesa",
       amount: total, date, due, settlements: [], manual: true });
   });
@@ -352,6 +368,14 @@ export async function updateLedger(form: FormData) {
   });
 }
 
+function contactIdentity(form: FormData, state: RetailState, id = "") {
+  const email = value(form, "email", 254, false);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RetailError("Informe um e-mail válido.");
+  const cpf = normalizeCpf(value(form, "cpf", 20, false));
+  if (cpf && state.contacts.some((item) => item.id !== id && item.cpf === cpf)) throw new RetailError("Este CPF já está cadastrado em outro cliente.");
+  return { email, cpf };
+}
+
 export async function saveContact(form: FormData) {
   const newId = randomUUID();
   const createdAt = new Date().toISOString();
@@ -363,10 +387,7 @@ export async function saveContact(form: FormData) {
     if (nextContact && !isCalendarDate(nextContact)) throw new RetailError("Informe uma data de retorno válida.");
     const birthDate = value(form, "birthDate", 10, false);
     if (birthDate && (!isCalendarDate(birthDate) || birthDate < "1900-01-01" || birthDate > localToday())) throw new RetailError("Informe uma data de nascimento válida.");
-    const email = value(form, "email", 254, false);
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RetailError("Informe um e-mail válido.");
-    const cpf = normalizeCpf(value(form, "cpf", 20, false));
-    if (cpf && state.contacts.some((item) => item.id !== id && item.cpf === cpf)) throw new RetailError("Este CPF já está cadastrado em outro cliente.");
+    const { email, cpf } = contactIdentity(form, state, id);
     const postalCode = value(form, "postalCode", 9, false).replace("-", "");
     if (postalCode && !/^\d{8}$/.test(postalCode)) throw new RetailError("Informe um CEP com 8 dígitos.");
     const uf = value(form, "uf", 2, false).toUpperCase();
@@ -379,10 +400,49 @@ export async function saveContact(form: FormData) {
         complement: value(form, "complement", 100, false), neighborhood: value(form, "neighborhood", 80, false),
         city: value(form, "city", 80, false), state: uf,
       },
-      store: choice(form, "store", storeIds), stage: choice(form, "stage", stages),
+      store: choice(form, "store", storeIds(state)), stage: choice(form, "stage", stages),
       interest: value(form, "interest", 100, false), nextContact, notes: value(form, "notes", 500, false),
     };
     if (contact) Object.assign(contact, fields);
     else state.contacts.unshift({ id: newId, ...fields, createdAt });
+  });
+}
+
+
+export async function saveUnit(form: FormData) {
+  const id = randomUUID();
+  await commit(form, "lojas", "Unidade adicionada.", (state) => {
+    const name = value(form, "name", 70);
+    const code = value(form, "code", 8).toUpperCase();
+    if (!/^[A-Z0-9]{2,8}$/.test(code)) throw new RetailError("Use uma sigla de 2 a 8 letras ou números.");
+    if (storeList(state).some((unit) => unit.code === code || unit.name.localeCompare(name, "pt-BR", { sensitivity: "base" }) === 0)) {
+      throw new RetailError("Já existe uma unidade com esse nome ou sigla.");
+    }
+    (state.units ??= []).push({ id, name, code });
+  });
+}
+
+export async function savePublication(form: FormData) {
+  await commit(form, "catalogo", "Publicação atualizada.", (state) => {
+    const id = value(form, "id", 140);
+    const product = state.products.find((item) => item.id === id);
+    if (!product || !["Scooter elétrica", "Bicicleta elétrica"].includes(product.category)) throw new RetailError("Modelo não encontrado.");
+    product.published = form.get("published") === "on";
+  });
+}
+
+export async function saveStaffAdvance(form: FormData) {
+  await commit(form, "funcionarios", "Vale registrado.", (state) => {
+    const id = value(form, "advanceId", 36);
+    if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário de vale.");
+    const advances = state.staffAdvances ??= [];
+    if (advances.some((item) => item.id === id)) return;
+    const staffId = value(form, "staffId", 36);
+    const employee = state.staff.find((item) => item.id === staffId && item.active);
+    if (!employee) throw new RetailError("Selecione um funcionário ativo.");
+    const date = value(form, "date", 10);
+    const total = amount(form, "amount");
+    if (!isCalendarDate(date) || date > localToday() || total <= 0) throw new RetailError("Informe uma data válida e um valor positivo.");
+    advances.unshift({ id, staffId, store: employee.store, date, amount: total, notes: value(form, "notes", 300, false) });
   });
 }
