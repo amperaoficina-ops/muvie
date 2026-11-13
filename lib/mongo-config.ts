@@ -6,5 +6,12 @@ export function localMongoConfig() {
     !/^muvie_[a-z0-9_]+$/.test(dbName)) {
     throw new Error("Use um MongoDB em localhost e um banco com prefixo muvie_.");
   }
+  const user = process.env.MONGODB_USER;
+  const password = process.env.MONGODB_PASSWORD;
+  if (user || password) {
+    if (!user || !password) throw new Error("Configure usuário e senha do MongoDB juntos.");
+    const host = uri.slice("mongodb://".length).replace(/\/$/, "");
+    return { uri: `mongodb://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}/${dbName}?authSource=${dbName}`, dbName };
+  }
   return { uri, dbName };
 }
