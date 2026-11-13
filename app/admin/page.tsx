@@ -17,6 +17,7 @@ import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
 import { StaffPanel } from "./staff";
 import { StockFields } from "./stock-fields";
+import { InventoryOverview, InvoiceOverview } from "./inventory-overview";
 import { UnitDialog } from "./unit-dialog";
 import { Submit } from "./submit";
 import { CardSettings, Charts, TestimonialsSettings, UsersPanel } from "./operations";
@@ -273,7 +274,18 @@ function Stock({ state, filter }: { state: RetailState; filter: Filter }) {
   return <>
     <div className="operation-grid">
       <section className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
-        {state.products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{state.products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku}</small></td>{columns.map((store) => <td key={store.id}>{product.stock[store.id] ?? 0} un.</td>)}</tr>)}</Table> : <Empty>Cadastre um produto para movimentar o estoque.</Empty>}
+        {state.products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{state.products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku}</small></td>{columns.map((store) => <td key={store.id}>
+          <strong>{product.stock[store.id] ?? 0} un.</strong>
+          {(product.stock[store.id] ?? 0) > 0 && <div className="inventory-tags">
+            {(() => {
+              const consigned = lots.filter((lot) => lot.store === store.id && lot.productId === product.id && lot.consigned)
+                .reduce((sum, lot) => sum + lot.quantity, 0);
+              const owned = (product.stock[store.id] ?? 0) - consigned;
+              return <>{consigned > 0 && <span className="pill consigned">{consigned} consignado</span>}
+                {owned > 0 && <span className="pill">{owned} próprio / avulso</span>}</>;
+            })()}
+          </div>}
+        </td>)}</tr>)}</Table> : <Empty>Cadastre um produto para movimentar o estoque.</Empty>}
       </section>
       <section className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
         {state.products.length ? <form action={updateStock} className="admin-form">
@@ -472,7 +484,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const showPurchases = canAccess(user, "compras");
   const period = reportPeriod(params.inicio, params.fim);
   const periodQuery = active.id === "financeiro" || active.id === "visao" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to }) : "";
-  const showInvoices = ["compras", "vendas", "crm"].includes(active.id);
+  const showInvoices = ["compras", "vendas", "crm"].includes(active.id) || (active.id === "visao" && (showSales || showPurchases));
   const [state, invoices, users] = await Promise.all([
     denied ? null : readRetail().catch(() => null),
     !denied && showInvoices ? listInvoices().catch(() => null) : [],
@@ -488,7 +500,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 
   return <div className="admin-shell">
     <aside className="sidebar">
-      <Brand href="/admin" /><span className="sidebar-label">GESTÃO DA LOJA</span>
+      <Brand href="/admin" />
       <nav aria-label="Módulos do painel">{navGroups.map(({ title, tabs }) => {
         const items = tabs.flatMap((id) => visibleNav.filter((item) => item.id === id));
         return items.length > 0 && <div className="sidebar-group" key={title}>
@@ -516,7 +528,10 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
         {state && !invoices && <p className="feedback error" role="alert">Não foi possível carregar os anexos de notas fiscais.</p>}
         {denied ? <Link className="back-link" href={adminUrl(active.id)}>Abrir {active.label} →</Link> : !state ? <p className="feedback error" role="alert">Não foi possível ler o banco de dados local. Confira a conexão com o MongoDB.</p> : <>
-          {active.id === "visao" && <><Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} />{canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }<Overview state={state} filter={filter} showSales={showSales} /></>}
+          {active.id === "visao" && <><Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} />{canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }<Overview state={state} filter={filter} showSales={showSales} />
+            {(canAccess(user, "estoque") || canAccess(user, "consignados")) && <InventoryOverview state={state} filter={filter} showCost={canAccess(user, "financeiro") || showPurchases} />}
+            {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}
+          </>}
           {active.id === "produtos" && <Products products={state.products} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings state={state} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}

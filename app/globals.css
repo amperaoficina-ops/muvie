@@ -313,3 +313,37 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .unit-dialog::backdrop { background: rgb(15 17 13 / .66); }
 .unit-dialog-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: .55rem; }
 .admin-heading > .button { align-self: center; }
+
+/* Backoffice */
+.admin-shell { background: #f4f5f8; color: #181b23; grid-template-columns: 238px minmax(0, 1fr); }
+.admin-shell .sidebar { background: #16181e; gap: 1.35rem; }
+.admin-shell .sidebar-group > p { color: #acafbb; }
+.admin-shell .sidebar nav a { border-radius: 9px; }
+.admin-shell .sidebar nav a[aria-current] { background: #353021; }
+.admin-shell .admin-top { border-color: #e2e4eb; }
+.admin-shell .admin-heading { align-items: center; flex-wrap: wrap; }
+.admin-shell .admin-heading h1 { font-size: clamp(1.85rem, 3vw, 2.65rem); letter-spacing: -.045em; }
+.admin-shell .branch-filter { background: #e8eaf0; flex-wrap: wrap; }
+.admin-shell .panel { border-color: #e0e3eb; border-radius: 15px; box-shadow: 0 2px 4px #18223508; }
+.admin-shell .panel-title { padding: 1rem 1.15rem; border-color: #eef0f4; }
+.admin-shell .panel-title h2 { letter-spacing: -.015em; }
+.admin-shell .admin-form { gap: 1rem; padding: 1.15rem; }
+.admin-shell :is(input:not([type="checkbox"]), select, textarea) { border-color: #dce0e8; border-radius: 8px; }
+.admin-shell .table-wrap thead { background: #f7f8fb; }
+.admin-shell td { border-color: #eef0f4; }
+.admin-shell .editable-list summary:hover { background: #f8f9fb; }
+.inventory-tags { display: flex; gap: .25rem; flex-wrap: wrap; margin-top: .3rem; }
+.pill.consigned { background: #fff0ba; color: #694500; }
+.dashboard-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr)); gap: .75rem; padding: 1rem; }
+.dashboard-values > div { border: 1px solid #e7e9f0; border-radius: 10px; padding: .8rem; background: #f8f9fc; }
+.dashboard-values p, .dashboard-values small { color: #555d6c; font-size: .78rem; }
+.dashboard-values strong { display: block; font-size: 1.25rem; margin-block: .2rem; overflow-wrap: anywhere; }
+.dashboard-bars { display: grid; gap: .85rem; padding: 0 1rem 1rem; }
+.dashboard-bars > div > div:first-child { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; font-size: .82rem; }
+.inventory-bar { display: flex; background: #eff0f4; height: .65rem; border-radius: .4rem; margin-top: .3rem; overflow: hidden; }
+.inventory-bar span:first-child { background: #566480; }
+.inventory-bar span:last-child { background: #b07a00; }
+@media (max-width: 960px) {
+  .admin-shell .operation-grid, .admin-shell .overview-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 850px) { .admin-shell { grid-template-columns: minmax(0, 1fr); } }
