@@ -10,7 +10,7 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, money, paymentMethods, stages, stockComposition, storeName, storeList,
+  balanceDue, money, paymentMethods, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
 import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes } from "./actions";
@@ -185,8 +185,8 @@ function ProductForm({ filter, product }: { filter: Filter; product?: Product })
     <label>Nome<input name="name" required maxLength={100} defaultValue={product?.name} placeholder="Nome comercial" /></label>
     <label>SKU<input name="sku" required maxLength={40} defaultValue={product?.sku} placeholder="Código do produto" /></label>
     <ProductCategoryFields product={product && { category: product.category, specs: product.specs }} />
-    <label>Preço de venda (R$)<input name="price" type="number" min="0" max="99999999.99" step=".01" defaultValue={product ? product.price / 100 : ""} placeholder="0,00" /></label>
-    <label>Custo unitário de referência (R$)<input name="purchaseCost" type="number" min="0" max="99999999.99" step=".01" defaultValue={product?.purchaseCost != null ? product.purchaseCost / 100 : ""} placeholder="Opcional" /></label>
+    <label>Preço de venda (R$)<input name="price" inputMode="decimal" maxLength={32} defaultValue={product ? (product.price / 100).toFixed(2).replace(".", ",") : ""} placeholder="0,00" /></label>
+    <label>Custo unitário de referência (R$)<input name="purchaseCost" inputMode="decimal" maxLength={32} defaultValue={product?.purchaseCost != null ? (product.purchaseCost / 100).toFixed(2).replace(".", ",") : ""} placeholder="Opcional" /></label>
     {product?.imageUrl && <div className="product-photo-preview span-two">
       <Image src={product.imageUrl} alt={product.name} width={96} height={72} unoptimized />
       <label className="checkbox"><input name="removePhoto" type="checkbox" /> Retirar a foto atual</label>
@@ -269,14 +269,22 @@ function purchaseStatus(state: RetailState, id: string, condition?: string) {
   return "Histórico sem classificação";
 }
 
-function Stock({ state, filter }: { state: RetailState; filter: Filter }) {
+function Stock({ state, filter, category }: { state: RetailState; filter: Filter; category?: Product["category"] }) {
+  const products = state.products.filter((product) => !category || product.category === category);
+  const ids = new Set(products.map((product) => product.id));
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
-  const movements = state.movements.filter((movement) => !filter || movement.store === filter);
-  const lots = state.stockLots.filter((item) => item.quantity > 0 && (!filter || item.store === filter));
+  const movements = state.movements.filter((movement) => (!category || ids.has(movement.productId)) && (!filter || movement.store === filter));
+  const lots = state.stockLots.filter((item) => item.quantity > 0 && (!category || ids.has(item.productId)) && (!filter || item.store === filter));
   return <>
+    <nav className="stock-category-filter" aria-label="Categoria de estoque">
+      {[undefined, ...productCategories].map((item) => <Link key={item ?? "all"} aria-current={item === category ? "true" : undefined}
+        href={adminUrl("estoque", filter) + (item ? "&" + new URLSearchParams({ categoria: item }) : "")}>
+        {item ?? "Todas as categorias"}
+      </Link>)}
+    </nav>
     <div className="operation-grid">
       <section className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
-        {state.products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{state.products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku}</small></td>{columns.map((store) => <td key={store.id}>
+        {products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td>{columns.map((store) => <td key={store.id}>
           <strong>{product.stock[store.id] ?? 0} un.</strong>
           {(product.stock[store.id] ?? 0) > 0 && <div className="inventory-tags">
             {(() => {
@@ -287,11 +295,11 @@ function Stock({ state, filter }: { state: RetailState; filter: Filter }) {
                 {owned > 0 && <span className="pill">{owned} próprio / avulso</span>}</>;
             })()}
           </div>}
-        </td>)}</tr>)}</Table> : <Empty>Cadastre um produto para movimentar o estoque.</Empty>}
+        </td>)}</tr>)}</Table> : <Empty>Nenhum produto nesta seleção.</Empty>}
       </section>
       <section className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
-        {state.products.length ? <form action={updateStock} className="admin-form">
-          <FilterInput filter={filter} /><ProductField products={state.products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
+        {products.length ? <form action={updateStock} className="admin-form">
+          <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><ProductField products={products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
           <StockFields units={storeList(state)} />
           <div className="span-two"><Submit>Salvar operação</Submit></div>
         </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
@@ -474,7 +482,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; inicio?: string; fim?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -498,6 +506,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const filter: Filter = storeList(state ?? undefined).find((store) => store.id === params.loja)?.id ?? "";
 
   const units = storeList(state ?? undefined);
+  const category = productCategories.find((item) => item === params.categoria);
+  const categoryQuery = active.id === "estoque" && category ? "&" + new URLSearchParams({ categoria: category }) : "";
   const heading = active.id === "lojas" && filter ? "Unidade " + storeName(filter, state ?? undefined) : active.label;
 
   const sidebar = <aside className="sidebar">
@@ -524,8 +534,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
         <div className="admin-heading"><div><p className="eyebrow">OPERAÇÃO MULTILOJA</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
           {!denied && !["lojas", "taxas", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <nav className="branch-filter" aria-label="Filtrar por unidade">
-            <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery}>Todas</Link>
-            {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery} key={store.id}>{store.name}</Link>)}
+            <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery}>Todas</Link>
+            {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery} key={store.id}>{store.name}</Link>)}
           </nav>}
         </div>
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
@@ -539,7 +549,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "produtos" && <Products products={state.products} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings state={state} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
-          {active.id === "estoque" && <Stock state={state} filter={filter} />}
+          {active.id === "estoque" && <Stock state={state} filter={filter} category={category} />}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <Sales state={state} filter={filter} invoices={invoices} focus={params.ficha} />}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}

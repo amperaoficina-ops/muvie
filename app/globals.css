@@ -380,3 +380,7 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .invoice-links a { display: inline-flex; min-height: 44px; align-items: center; padding: .45rem .65rem;
   border: 1px solid #e0e4ec; border-radius: 9px; background: #f8f9fc; text-decoration: none; }
 .invoice-links a:hover { background: #eef1f7; }
+
+.stock-category-filter { display: flex; flex-wrap: wrap; gap: .45rem; min-width: 0; }
+.stock-category-filter a { display: inline-flex; align-items: center; min-height: 44px; padding: .45rem .78rem; border: 1px solid #e0e3eb; border-radius: 999px; background: #fff; font-size: .84rem; font-weight: 700; }
+.stock-category-filter a[aria-current] { background: #fff0ba; border-color: #e0b540; color: #513600; }

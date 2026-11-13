@@ -1,5 +1,6 @@
 "use server";
 
+import { parseReais } from "@/domain/money-input";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -46,10 +47,9 @@ function choice<T extends string>(form: FormData, key: string, choices: readonly
 }
 
 function amount(form: FormData, key: string) {
-  const input = value(form, key, 12, false).replace(",", ".");
-  if (!input) return 0;
-  if (!/^\d{1,8}(?:\.\d{1,2})?$/.test(input)) throw new RetailError("Informe um valor em reais com até duas casas decimais.");
-  return Math.round(Number(input) * 100);
+  const cents = parseReais(value(form, key, 32, false));
+  if (cents === null) throw new RetailError("Informe um valor em reais, como 7.990,00, com até duas casas decimais.");
+  return cents;
 }
 
 function units(form: FormData) {
@@ -63,6 +63,8 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
   const user = await requireUser();
   const filter = form.get("filter");
   const params = new URLSearchParams({ tab });
+  const category = form.get("stockCategory");
+  if (tab === "estoque" && productCategories.some((item) => item === category)) params.set("categoria", String(category));
   for (const key of ["inicio", "fim"]) {
     const date = form.get(key);
     if (typeof date === "string" && isCalendarDate(date)) params.set(key, date);
@@ -115,7 +117,7 @@ export async function saveProduct(form: FormData) {
       sku, name: value(form, "name", 100), category,
       specs: category === scooterCategory ? readScooterSpecs(form) : null,
       price: amount(form, "price"),
-      purchaseCost: value(form, "purchaseCost", 12, false) ? amount(form, "purchaseCost") : null,
+      purchaseCost: value(form, "purchaseCost", 32, false) ? amount(form, "purchaseCost") : null,
       description: value(form, "description", 350, false),
       published: current?.published ?? false, imageUrl,
     };
