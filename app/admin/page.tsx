@@ -1,3 +1,4 @@
+import { AttachmentPicker } from "./attachment-picker";
 import { MobileMenu } from "./mobile-menu";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
@@ -97,7 +98,7 @@ function InvoiceBox({ owner, id, filter, invoices }: { owner: InvoiceOwner; id: 
       <input type="hidden" name="ownerId" value={id} />
       <input type="hidden" name="focus" value={id} />
       {owner === "client" && <label>Tipo de nota<select name="kind"><option>Venda</option><option>Compra</option></select></label>}
-      <label>Arquivo (PDF ou XML, até 8 MB)<input type="file" name="invoice" accept=".pdf,.xml" required /></label>
+      <AttachmentPicker name="invoice" label="Selecionar documento" accept=".pdf,.xml" hint="PDF ou XML · até 8 MB" required />
       <div><Submit>Anexar nota fiscal</Submit></div>
     </form>
   </section>;
@@ -190,7 +191,7 @@ function ProductForm({ filter, product }: { filter: Filter; product?: Product })
       <Image src={product.imageUrl} alt={product.name} width={96} height={72} unoptimized />
       <label className="checkbox"><input name="removePhoto" type="checkbox" /> Retirar a foto atual</label>
     </div>}
-    <label className="span-two">{product?.imageUrl ? "Substituir foto" : "Foto do produto"}<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" /><small>JPG, PNG ou WebP, até 5 MB.</small></label>
+    <div className="span-two"><AttachmentPicker name="photo" label={product?.imageUrl ? "Substituir foto" : "Selecionar foto"} accept="image/jpeg,image/png,image/webp" hint="JPG, PNG ou WebP · até 5 MB" /></div>
     <label className="span-two">Descrição<textarea name="description" rows={2} maxLength={350} defaultValue={product?.description} /></label>
     <div className="span-two"><Submit>{product ? "Salvar alterações" : "Cadastrar produto"}</Submit></div>
   </form>;

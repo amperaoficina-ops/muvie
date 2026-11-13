@@ -160,7 +160,6 @@ input[type="checkbox"] { accent-color: #a68000; width: 1rem; height: 1rem; }
 .invoice-box h3 { font-size: .86rem; font-weight: 800; }
 .invoice-form { display: grid; gap: .5rem; min-width: 0; }
 .invoice-form label { display: grid; gap: .3rem; font-size: .77rem; }
-.invoice-form input[type=file] { min-height: auto; max-width: 100%; font-size: .76rem; }
 .invoice-links, .client-history { display: grid; gap: .45rem; margin: 0; padding: 0; list-style: none; }
 .invoice-links li { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem; }
 .invoice-links a { color: #665009; font-size: .8rem; font-weight: 700; overflow-wrap: anywhere; text-decoration: underline; }
@@ -364,3 +363,20 @@ body:has(.model-dialog[open]) { overflow: hidden; }
     min-width: 44px; min-height: 44px; color: inherit; border-color: #565966; font-size: 1.2rem;
   }
 }
+
+.attachment-picker { display: grid; gap: .4rem; min-width: 0; }
+.attachment-picker .attachment-trigger { display: inline-flex; position: relative; justify-self: start; max-width: 100%; }
+.attachment-trigger input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.attachment-trigger > span {
+  display: inline-flex; gap: .55rem; align-items: center; min-height: 44px;
+  padding: .55rem .85rem; border: 1px solid #dce1eb; border-radius: 11px;
+  background: #f0f3f9; color: #233654; font-weight: 700; font-size: .85rem;
+}
+.attachment-trigger:hover > span { background: #e6ecf7; }
+.attachment-trigger:focus-within > span { outline: 2px solid #365c9e; outline-offset: 2px; }
+.attachment-trigger svg { flex: none; }
+.attachment-filename { font-size: .82rem; font-weight: 700; overflow-wrap: anywhere; }
+.attachment-picker small { color: #565e6e; font-size: .75rem; }
+.invoice-links a { display: inline-flex; min-height: 44px; align-items: center; padding: .45rem .65rem;
+  border: 1px solid #e0e4ec; border-radius: 9px; background: #f8f9fc; text-decoration: none; }
+.invoice-links a:hover { background: #eef1f7; }
