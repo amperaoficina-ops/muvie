@@ -107,7 +107,6 @@ textarea { resize: vertical; }
 .admin-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100svh; }
 .sidebar { display: flex; flex-direction: column; gap: 1rem; padding: 1.35rem .9rem; background: #151610; color: #d6d6cc; }
 .sidebar .brand { margin-left: .38rem; }
-.sidebar-label { font-size: .64rem; font-weight: 800; color: #acada1; letter-spacing: .13em; margin: 1.35rem .48rem 0; }
 .sidebar nav { display: grid; gap: .3rem; }
 .sidebar nav a, .sidebar-footer { display: flex; align-items: center; gap: .65rem; border-radius: 7px; padding: .74rem .66rem; font-size: .88rem; white-space: nowrap; }
 .sidebar nav a[aria-current] { color: var(--yellow); background: #302a15; font-weight: 750; }
@@ -206,9 +205,6 @@ tr:last-child td { border-bottom: 0; }
   .login-banner { padding: 1.5rem; }
   .login-main { padding-block: 2rem; }
   .sidebar { padding: .8rem; gap: .55rem; }
-  .sidebar-label, .sidebar-footer { display: none; }
-  .sidebar nav { display: flex; overflow-x: auto; }
-  .sidebar nav a { font-size: .8rem; padding: .52rem; }
   .admin-heading { align-items: start; flex-direction: column; }
   .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -295,8 +291,6 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .consignment-bar { display: flex; height: .8rem; overflow: hidden; background: #dedfd6; border-radius: 1rem; }
 .consignment-bar span { background: #b17d00; }
 @media (max-width: 850px) {
-  .sidebar-group { display: flex; align-items: center; }
-  .sidebar-group > p { white-space: nowrap; }
 }
 
 .sales-workspace { display: grid; min-width: 0; gap: 1rem; }
@@ -347,3 +341,26 @@ body:has(.model-dialog[open]) { overflow: hidden; }
   .admin-shell .operation-grid, .admin-shell .overview-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 850px) { .admin-shell { grid-template-columns: minmax(0, 1fr); } }
+
+.desktop-admin-menu > .sidebar { min-height: 100%; }
+.admin-top > .mobile-admin-menu { display: none; }
+.mobile-admin-drawer:not([open]) { display: none; }
+@media (max-width: 850px) {
+  .desktop-admin-menu, .admin-top > p { display: none; }
+  .admin-top > .mobile-admin-menu { display: flex; }
+  .mobile-admin-menu > button { display: inline-flex; gap: .45rem; align-items: center; min-height: 44px; }
+  .mobile-admin-drawer {
+    position: fixed; inset: 0 auto 0 0; margin: 0; padding: 0; border: 0;
+    width: min(85vw, 320px); max-width: none; height: 100dvh; max-height: none;
+    color: #f5f5eb; background: #16181e; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .mobile-admin-drawer::backdrop { background: rgb(13 16 25 / .62); }
+  body:has(.mobile-admin-drawer[open]) { overflow: hidden; }
+  .mobile-drawer-content { position: relative; min-height: 100%; display: grid; }
+  .mobile-drawer-content .sidebar { padding: max(1rem, env(safe-area-inset-top)) .85rem max(1rem, env(safe-area-inset-bottom)); }
+  .mobile-drawer-content .sidebar nav a { min-height: 44px; }
+  .admin-top .mobile-drawer-close {
+    position: absolute; top: max(.65rem, env(safe-area-inset-top)); right: .65rem;
+    min-width: 44px; min-height: 44px; color: inherit; border-color: #565966; font-size: 1.2rem;
+  }
+}

@@ -1,3 +1,4 @@
+import { MobileMenu } from "./mobile-menu";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import Image from "next/image";
@@ -498,8 +499,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const units = storeList(state ?? undefined);
   const heading = active.id === "lojas" && filter ? "Unidade " + storeName(filter, state ?? undefined) : active.label;
 
-  return <div className="admin-shell">
-    <aside className="sidebar">
+  const sidebar = <aside className="sidebar">
       <Brand href="/admin" />
       <nav aria-label="Módulos do painel">{navGroups.map(({ title, tabs }) => {
         const items = tabs.flatMap((id) => visibleNav.filter((item) => item.id === id));
@@ -512,9 +512,12 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
         </div>;
       })}</nav>
       <Link className="sidebar-footer" href="/">Ver landing page <Icon name="external" size={16} /></Link>
-    </aside>
+    </aside>;
+
+  return <div className="admin-shell">
+    <div className="desktop-admin-menu">{sidebar}</div>
     <div className="admin-main">
-      <header className="admin-top"><p><span>MUVI-E</span> / Gestão de loja</p><div><span>{user.name}</span><form action={signOut}><button type="submit">Sair</button></form></div></header>
+      <header className="admin-top"><MobileMenu>{sidebar}</MobileMenu><p><span>MUVI-E</span> / Gestão de loja</p><div><span>{user.name}</span><form action={signOut}><button type="submit">Sair</button></form></div></header>
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">OPERAÇÃO MULTILOJA</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
