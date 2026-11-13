@@ -5,7 +5,8 @@ export const metadata: Metadata = {
   title: { default: "MUVI-E | Sua nova forma de rodar", template: "%s | MUVI-E" },
   description: "Scooters elétricas em São José e Palhoça, Santa Catarina.",
   robots: { index: false, follow: false },
-  icons: { icon: "/brand/mark.svg" },
+  applicationName: "Muvi-E",
+  appleWebApp: { capable: true, title: "Muvi-E" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
