@@ -40,7 +40,7 @@ export function CreateDialog({ children, reopen, id, title }: { children: ReactN
   </dialog>;
 }
 
-export function SaleDetailsDialog({ id, children, reopen }: { id: string; children: ReactNode; reopen: boolean }) {
+export function DetailsDialog({ id, children, reopen, title }: { id: string; children: ReactNode; reopen: boolean; title: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -53,7 +53,7 @@ export function SaleDetailsDialog({ id, children, reopen }: { id: string; childr
       onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
       <div className="unit-dialog-body">
         <div className="panel-title">
-          <h2 id={id}>Detalhes da venda</h2>
+          <h2 id={id}>{title}</h2>
           <button type="button" className="button" aria-label="Fechar detalhes" onClick={() => dialog.current?.close()}>×</button>
         </div>
         {children}

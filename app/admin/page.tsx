@@ -1,6 +1,6 @@
 import { TaxSettings } from "./tax-settings";
 import { CheckoutFields } from "./checkout-fields";
-import { CreateDialog, SaleDetailsDialog } from "./sale-dialog";
+import { CreateDialog, DetailsDialog } from "./sale-dialog";
 import { AttachmentPicker } from "./attachment-picker";
 import { MobileMenu } from "./mobile-menu";
 import { randomUUID } from "node:crypto";
@@ -379,7 +379,7 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
       <td>{storeName(sale.store, state)}</td><td><strong>{money(sale.total)}</strong><small>{sale.payments?.length ? sale.payments.map((payment) => payment.method + " " + money(payment.amount)).join(" · ") : sale.method}</small></td>
       <td><span className={"pill " + (status === "Recebida" ? "green" : "")}>{status}</span></td>
       {canCancel && <><td><span className={"pill " + (hasInvoice ? "green" : "")}>{invoiceStatus}</span></td><td>
-        <SaleDetailsDialog id={"detalhes-" + sale.id} reopen={focus === sale.id}>
+        <DetailsDialog title="Detalhes da venda" id={"detalhes-" + sale.id} reopen={focus === sale.id}>
           <div className="sale-detail-content">
           {focus === sale.id && detailFeedback && <p className={"feedback " + (detailFeedback.error ? "error" : "success")} role={detailFeedback.error ? "alert" : "status"}>{detailFeedback.message}</p>}
           <div className="sale-detail-card sale-summary"><h3>{sale.customer}</h3><p>{storeName(sale.store, state)} · {dateLabel(sale.createdAt)}{sale.sellerName && " · " + sale.sellerName}</p>
@@ -443,7 +443,7 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
           <Submit variant="danger">Confirmar</Submit>
         </form></details>}
           </div>
-        </SaleDetailsDialog>
+        </DetailsDialog>
       </td></>}
     </tr>;
   })}</Table>;
@@ -523,8 +523,8 @@ function ContactForm({ filter, contact, state }: { filter: Filter; contact?: Con
   </form>;
 }
 
-function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, error }: {
-  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; showSales: boolean; showPurchases: boolean; stage?: string; error?: string;
+function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, error, success }: {
+  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; showSales: boolean; showPurchases: boolean; stage?: string; error?: string; success?: string;
 }) {
   const list = state.contacts.filter((contact) => !filter || contact.store === filter);
   const selected = stages.find((item) => item === stage);
@@ -542,14 +542,27 @@ function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, 
         </Link>)}
     </nav>
     <section className="panel"><div className="panel-title"><h2>Clientes e oportunidades</h2></div>
-      {visible.length ? <div className="editable-list" key={selected ?? "todos"}>{visible.map((contact) => <details key={contact.id} name="crm-client" open={focus === contact.id}>
-        <summary><span><strong>{contact.name}</strong><small>{storeName(contact.store, state)}{contact.interest ? " · " + contact.interest : ""}{contact.nextContact ? " · Retorno " + contact.nextContact.split("-").reverse().join("/") : ""}</small></span><span className="pill">{contact.stage}</span></summary>
-        <ContactForm state={state} filter={filter} contact={contact} />
-        <InvoiceBox owner="client" id={contact.id} filter={filter} invoices={invoices} />
-        {(showSales || showPurchases) && <section className="invoice-box"><h3>Histórico vinculado</h3>
-          <ClientHistory state={state} contact={contact} invoices={invoices} showSales={showSales} showPurchases={showPurchases} />
-        </section>}
-      </details>)}</div> : <Empty>{selected ? "Nenhum cliente nesta etapa." : "Adicione um contato para acompanhar a próxima conversa ou proposta."}</Empty>}
+      {visible.length ? <Table headers={["Cliente", "Unidade", "Interesse", "Próximo retorno", "Status", "Ação"]}>
+        {visible.map((contact) => <tr key={contact.id}>
+          <td><strong>{contact.name}</strong></td>
+          <td>{storeName(contact.store, state)}</td>
+          <td>{contact.interest || "—"}</td>
+          <td>{contact.nextContact ? calendarLabel(contact.nextContact) : "—"}</td>
+          <td><span className="pill">{contact.stage}</span></td>
+          <td><DetailsDialog id={"cliente-" + contact.id} title={contact.name} reopen={focus === contact.id}>
+            <div className="sale-detail-content">
+              {focus === contact.id && (error || success) && <p className={"feedback " + (error ? "error" : "success")} role={error ? "alert" : "status"}>{error || success}</p>}
+              <section className="sale-detail-card"><h3>Dados do cliente</h3>
+                <ContactForm state={state} filter={filter} contact={contact} />
+              </section>
+              <InvoiceBox owner="client" id={contact.id} filter={filter} invoices={invoices} />
+              {(showSales || showPurchases) && <section className="sale-detail-card"><h3>Histórico vinculado</h3>
+                <ClientHistory state={state} contact={contact} invoices={invoices} showSales={showSales} showPurchases={showPurchases} />
+              </section>}
+            </div>
+          </DetailsDialog></td>
+        </tr>)}
+      </Table> : <Empty>{selected ? "Nenhum cliente nesta etapa." : "Adicione um contato para acompanhar a próxima conversa ou proposta."}</Empty>}
     </section>
   </>;
 }
@@ -678,7 +691,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
-          {active.id === "crm" && <CRM stage={params.etapa} error={params.erro} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
+          {active.id === "crm" && <CRM stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
             lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}
             sellers={canAccess(user, "financeiro") ? state.staff.filter((seller) => seller.active).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps })) : []}
