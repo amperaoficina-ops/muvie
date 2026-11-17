@@ -439,3 +439,8 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 .checkout-group > button { justify-self: start; background: #fff; border-color: #a0aab8; }
 .checkout-summary { padding: 0; }
 .sale-pending-table .panel-title h3 { padding: 0; }
+
+.sale-filters > a { display: block; border: 1px solid #dbe0e8; border-radius: 10px; padding: .8rem; background: #f8f9fc; color: inherit; }
+.sale-filters > a:hover { border-color: #806905; }
+.sale-filters > a[aria-current="true"] { background: #fff3c2; border-color: #806905; }
+.sale-detail-content { display: grid; gap: 1rem; padding: 1rem; min-width: 0; text-align: left; white-space: normal; }

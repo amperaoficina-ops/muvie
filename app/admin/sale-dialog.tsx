@@ -39,3 +39,25 @@ export function SaleDialog({ children, reopen }: { children: ReactNode; reopen: 
     </div>
   </dialog>;
 }
+
+export function SaleDetailsDialog({ id, children, reopen }: { id: string; children: ReactNode; reopen: boolean }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    if (reopen && !dialog.current?.open) dialog.current?.showModal();
+  }, [reopen]);
+
+  return <>
+    <button type="button" className="button" onClick={() => dialog.current?.showModal()}>Ver detalhes</button>
+    <dialog ref={dialog} className="unit-dialog sale-dialog panel" aria-labelledby={id}
+      onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
+      <div className="unit-dialog-body">
+        <div className="panel-title">
+          <h2 id={id}>Detalhes da venda</h2>
+          <button type="button" className="button" aria-label="Fechar detalhes" onClick={() => dialog.current?.close()}>×</button>
+        </div>
+        {children}
+      </div>
+    </dialog>
+  </>;
+}
