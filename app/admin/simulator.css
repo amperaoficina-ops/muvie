@@ -3,24 +3,8 @@
   align-items: start;
   gap: 1rem;
 }
-.simulator-form .checkout-group {
-  display: grid;
-  gap: .75rem;
-  background: #f3f5f8;
-  border: 1px solid #dbe0e8;
-  border-radius: 12px;
-}
-.simulator-form .simulator-row {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  align-items: end;
-  gap: .65rem;
-  padding: .75rem;
-  border: 1px solid #dbe0e8;
-  border-radius: 9px;
-  background: #fff;
-}
-.simulator-row .simulator-remove { grid-column: 1 / -1; justify-self: start; }
+.simulator-form .checkout-row > label { min-width: 0; }
+.simulator-form .checkout-row :is(input, select) { width: 100%; min-width: 0; }
 .simulator-summary .quote-body { gap: .85rem; }
 .simulator-total { display: grid; gap: .3rem; padding: 1rem; background: #fff3c2; border: 1px solid #e3c55f; border-radius: 10px; }
 .simulator-total strong { font-size: clamp(1.7rem, 4vw, 2.5rem); line-height: 1.15; overflow-wrap: anywhere; }
@@ -32,4 +16,3 @@
 .simulator-finance dl { margin-top: .55rem; }
 @media (min-width: 961px) { .simulator-summary { position: sticky; top: 1rem; } }
 @media (max-width: 960px) { .admin-shell .simulator-layout { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 480px) { .simulator-form .simulator-row { grid-template-columns: minmax(0, 1fr); } }

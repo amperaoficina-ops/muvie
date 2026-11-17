@@ -33,20 +33,20 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
           {stores.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
         </select></label>
         <label>Nome do cliente (opcional)<input value={customer} maxLength={100} onChange={(event) => setCustomer(event.target.value)} /></label>
-        <fieldset className="checkout-group span-two"><legend>Produtos</legend>
-          {items.map((item, index) => <div className="simulator-row" key={index}>
+        <fieldset className="address-fields span-two checkout-group"><legend>Produtos</legend>
+          {items.map((item, index) => <div className="checkout-row span-two" key={index}>
             <label>Produto <select value={item.productId} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, productId: event.target.value } : row))}>
               <option value="">{available.length ? "Selecione um produto" : "Sem produtos disponíveis"}</option>
               {available.map((row) => <option value={row.id} key={row.id}>{row.name} · {money(row.price)} · {row.stock[store]} un.</option>)}
             </select></label>
             <label>Quantidade<input type="number" min="1" value={item.quantity} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, quantity: event.target.value } : row))} /></label>
-            {items.length > 1 && <button type="button" className="button simulator-remove" onClick={() => setItems(items.filter((_, i) => i !== index))}>Remover produto</button>}
+            {items.length > 1 && <button type="button" className="button danger" onClick={() => setItems(items.filter((_, i) => i !== index))}>Remover produto</button>}
           </div>)}
           <button type="button" className="button" disabled={items.length >= 20} onClick={() => setItems([...items, { productId: "", quantity: "1" }])}>Adicionar produto</button>
         </fieldset>
         <label className="span-two">Desconto (R$)<input value={discount} inputMode="decimal" placeholder="0,00" onChange={(event) => setDiscount(event.target.value)} /></label>
-        <fieldset className="checkout-group span-two"><legend>Pagamento</legend>
-          {payments.map((payment, index) => <div className="simulator-row" key={index}>
+        <fieldset className="address-fields span-two checkout-group"><legend>Pagamento</legend>
+          {payments.map((payment, index) => <div className="checkout-row span-two" key={index}>
             <label>Forma de pagamento<select value={payment.method} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, method: event.target.value } : row))}>
               {paymentMethods.map((method) => <option key={method}>{method}</option>)}
             </select></label>
@@ -55,9 +55,9 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
               {!rates.length && <option value="">Nenhuma taxa cadastrada</option>}
               {rates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.mode} · {item.installments}×</option>)}
             </select></label>}
-            {payments.length > 1 && <button type="button" className="button simulator-remove" onClick={() => setPayments(payments.filter((_, i) => i !== index))}>Remover pagamento</button>}
+            {payments.length > 1 && <button type="button" className="button danger" onClick={() => setPayments(payments.filter((_, i) => i !== index))}>Remover pagamento</button>}
           </div>)}
-          {base && payments.length > 1 && <p className="form-note">
+          {base && payments.length > 1 && <p className="form-note span-two">
             {difference === 0 ? "Valores somam o total da proposta." : difference > 0
               ? "Falta distribuir " + money(difference) : "Os pagamentos excedem o total em " + money(-difference)}
           </p>}
