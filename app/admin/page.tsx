@@ -341,7 +341,7 @@ function Stock({ state, filter, category, showPurchases }: { state: RetailState;
 function SaleDocuments({ sale, filter, invoices }: { sale: Sale; filter: Filter; invoices: InvoiceMeta[] }) {
   return <section className="sale-detail-card"><h3>Documentos</h3><div className="sale-document-grid">
     <div><h4>Contrato</h4><p>Minuta preenchida com os dados da venda, para revisão antes da assinatura.</p>
-      {!sale.canceledAt && <a className="button" href={`/admin/vendas/${sale.id}/contrato`}>Baixar minuta em PDF ↓</a>}
+      {!sale.canceledAt && <a className="button sale-download" href={`/admin/vendas/${encodeURIComponent(sale.id)}/contrato`} download><span>Baixar contrato</span><span className="pill">PDF</span></a>}
     </div>
     {!sale.canceledAt && <div><h4>Ficha fiscal para o contador</h4>
       <p>Exporte os dados da venda e do produto para preparar a emissão. Após a autorização, anexe a nota abaixo.</p>
@@ -351,7 +351,7 @@ function SaleDocuments({ sale, filter, invoices }: { sale: Sale; filter: Filter;
           defaultValue={sale.fiscalNotes} placeholder="Ex.: número de série, chassi ou observações da operação" /></label>
         <Submit>Salvar informações</Submit>
       </form>
-      <a className="button" href={`/admin/vendas/${sale.id}/fiscal`}>Baixar ficha fiscal em PDF ↓</a>
+      <a className="button sale-download" href={`/admin/vendas/${encodeURIComponent(sale.id)}/fiscal`} download><span>Baixar ficha fiscal</span><span className="pill">PDF</span></a>
     </div>}
     <InvoiceBox owner="sale" id={sale.id} filter={filter} invoices={invoices} />
   </div></section>;
@@ -367,6 +367,9 @@ function saleStatus(sale: Sale, state: RetailState) {
 function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, detailFeedback, canEditCosts = false, showCost = false }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[] | null; focus?: string; detailFeedback?: { message: string; error: boolean }; canEditCosts?: boolean; showCost?: boolean }) {
   return <Table headers={["Venda", "Unidade", "Total", "Recebimento", ...(canCancel ? ["Nota fiscal", "Ação"] : [])]}>{sales.map((sale) => {
     const status = saleStatus(sale, state);
+    const receivables = state.ledger.filter((entry) => entry.saleId === sale.id && entry.kind === "venda" && !entry.canceled);
+    const outstanding = receivables.reduce((total, entry) => total + balanceDue(entry), 0);
+    const received = receivables.reduce((total, entry) => total + entry.amount - balanceDue(entry), 0);
     const hasInvoice = invoices?.some((invoice) => invoice.owner === "sale" && invoice.ownerId === sale.id);
     const invoiceStatus = invoices == null ? "Indisponível" : hasInvoice ? "Anexada" : "Não anexada";
     return <tr key={sale.id} id={"venda-" + sale.id}>
@@ -388,9 +391,24 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
             </tr>)}
           </Table></section>
           <section className="sale-detail-card"><h3>Pagamento</h3>
-            <p>{sale.payments?.length ? sale.payments.map((payment) => payment.method + " " + money(payment.amount)).join(" · ") : sale.method}</p>
-            <dl className="sale-payment-totals"><div><dt>Desconto</dt><dd>{money(sale.discount)}</dd></div><div><dt>Total da venda</dt><dd>{money(sale.total)}</dd></div></dl>
-            {showCost && <p>Taxas {money(sale.cardFees ?? 0)} · Imposto {money(sale.tax?.amount ?? 0)} · Comissão {money(sale.commission ?? 0)}</p>}
+            <dl className="sale-payment-totals">
+              <div><dt>Total da venda</dt><dd>{money(sale.total)}</dd></div>
+              {receivables.length > 0 && <>
+                <div><dt>Recebido</dt><dd>{money(received)}</dd></div>
+                <div><dt>A receber</dt><dd>{money(outstanding)}</dd></div>
+              </>}
+            </dl>
+            <dl className="sale-payment-lines">
+              {(sale.payments?.length ? sale.payments : [{ method: sale.method, amount: sale.total }]).map((payment, index) =>
+                <div key={index}><dt>{payment.method}</dt><dd>{money(payment.amount)}</dd></div>
+              )}
+              {sale.discount > 0 && <div><dt>Desconto aplicado</dt><dd>{money(sale.discount)}</dd></div>}
+              {showCost && <>
+                <div><dt>Taxas de cartão</dt><dd>{money(sale.cardFees ?? 0)}</dd></div>
+                <div><dt>Imposto</dt><dd>{money(sale.tax?.amount ?? 0)}</dd></div>
+                <div><dt>Comissão</dt><dd>{money(sale.commission ?? 0)}</dd></div>
+              </>}
+            </dl>
           </section>
           <SaleDocuments sale={sale} filter={filter} invoices={invoices ?? []} />
           {canEditCosts && !sale.canceledAt && <details className="sale-detail-card sale-documents"><summary>Editar custos</summary>

@@ -458,3 +458,13 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 .sale-detail-card .sale-document-grid > * { display: grid; align-content: start; justify-items: start; gap: .5rem; margin: 0; padding: .85rem; background: #f8f9fc; border: 1px solid #dbe0e8; border-radius: 8px; min-width: 0; }
 .sale-detail-card .invoice-form { width: 100%; }
 .sale-detail-card summary { cursor: pointer; }
+
+.sale-payment-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); gap: .5rem; }
+.sale-payment-totals > div { background: #f3f5f8; border-radius: 8px; padding: .75rem; min-width: 0; }
+.sale-payment-totals > div:first-child { background: #fff3c2; }
+.sale-payment-lines { margin: 0; }
+.sale-payment-lines > div { display: flex; gap: .5rem; justify-content: space-between; padding: .6rem 0; border-bottom: 1px solid #e1e5ec; }
+.sale-payment-lines > div:last-child { border-bottom: 0; }
+.sale-payment-lines dd { margin: 0; text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.sale-detail-card .sale-download { display: flex; justify-content: space-between; gap: .5rem; width: 100%; min-height: 44px; height: auto; white-space: normal; text-align: left; }
+.sale-download .pill { flex-shrink: 0; }
