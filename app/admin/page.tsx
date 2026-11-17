@@ -309,19 +309,45 @@ function purchaseStatus(state: RetailState, id: string, condition?: string) {
   return "Histórico sem classificação";
 }
 
-function Stock({ state, filter, category, showPurchases, movementPage, query }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; movementPage?: string; query: string }) {
+const stockPageSize = 10;
+
+function stockPage(count: number, requested?: string) {
+  const pages = Math.max(1, Math.ceil(count / stockPageSize));
+  const number = Number(requested);
+  const current = Number.isSafeInteger(number) ? Math.min(pages, Math.max(1, number)) : 1;
+  return { count, pages, current, start: (current - 1) * stockPageSize };
+}
+
+function StockPagination({ name, page, href }: { name: string; page: ReturnType<typeof stockPage>; href: (number: number) => string }) {
+  if (page.pages === 1) return null;
+  return <nav className="panel-title" aria-label={"Páginas de " + name}>
+    <span>Página {page.current} de {page.pages} · {page.start + 1}–{Math.min(page.start + stockPageSize, page.count)} de {page.count}</span>
+    <div className="workspace-section-links">
+      {page.current > 1 && <Link href={href(page.current - 1)}>Anterior</Link>}
+      {page.current < page.pages && <Link href={href(page.current + 1)}>Próxima</Link>}
+    </div>
+  </nav>;
+}
+
+function Stock({ state, filter, category, showPurchases, movementPage, balancePage, lotPage, query }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; movementPage?: string; balancePage?: string; lotPage?: string; query: string }) {
   const products = state.products.filter((product) => (!category || product.category === category) && matchesSearch(query, product.name, product.sku, product.category));
   const ids = new Set(products.map((product) => product.id));
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
   const movements = state.movements.filter((movement) => (!(category || query) || ids.has(movement.productId)) && (!filter || movement.store === filter));
-  const pageSize = 15;
-  const pageCount = Math.max(1, Math.ceil(movements.length / pageSize));
-  const requestedPage = Number(movementPage);
-  const page = Number.isSafeInteger(requestedPage) ? Math.min(pageCount, Math.max(1, requestedPage)) : 1;
-  const start = (page - 1) * pageSize;
-  const historyUrl = (number: number) => adminUrl("estoque", filter) + "&" +
-    new URLSearchParams({ ...(category ? { categoria: category } : {}), ...(query ? { busca: query } : {}), movimentosPagina: String(number) }) + "#movimentacoes-estoque";
   const lots = state.stockLots.filter((item) => item.quantity > 0 && (!(category || query) || ids.has(item.productId)) && (!filter || item.store === filter));
+  const balances = stockPage(products.length, balancePage);
+  const stockLots = stockPage(lots.length, lotPage);
+  const history = stockPage(movements.length, movementPage);
+  const pageUrl = (key: string, number: number, section: string) => {
+    const params = new URLSearchParams();
+    if (category) params.set("categoria", category);
+    if (query) params.set("busca", query);
+    for (const [name, current] of [["saldosPagina", balances.current], ["lotesPagina", stockLots.current], ["movimentosPagina", history.current]] as const) {
+      const selected = name === key ? number : current;
+      if (selected > 1) params.set(name, String(selected));
+    }
+    return adminUrl("estoque", filter) + (params.size ? "&" + params : "") + "#" + section;
+  };
   return <>
     <nav className="stock-category-filter" aria-label="Categoria de estoque">
       {[undefined, ...productCategories].map((item) => <Link key={item ?? "all"} aria-current={item === category ? "true" : undefined}
@@ -336,8 +362,9 @@ function Stock({ state, filter, category, showPurchases, movementPage, query }: 
         <div className="span-two"><Submit>Salvar operação</Submit></div>
       </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
     </section>
-    <section className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
-      {products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td>{columns.map((store) => <td key={store.id}>
+    <section id="saldos-estoque" className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
+      <div className="panel-title"><RecordSearch key={filter + ":" + (category ?? "")} tab="estoque" store={filter} category={category} query={query} /></div>
+      {products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{products.slice(balances.start, balances.start + stockPageSize).map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td>{columns.map((store) => <td key={store.id}>
         <strong>{product.stock[store.id] ?? 0} un.</strong>
         {(product.stock[store.id] ?? 0) > 0 && <div className="inventory-tags">
           {(() => {
@@ -349,24 +376,20 @@ function Stock({ state, filter, category, showPurchases, movementPage, query }: 
           })()}
         </div>}
       </td>)}</tr>)}</Table> : <Empty>Nenhum produto nesta seleção.</Empty>}
+      <StockPagination name="saldos por unidade" page={balances} href={(number) => pageUrl("saldosPagina", number, "saldos-estoque")} />
     </section>
     <section id="lotes-estoque" className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
-      {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.map((lot) => {
+      {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.slice(stockLots.start, stockLots.start + stockPageSize).map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
         return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{storeName(lot.store, state)}</td>
           <td>{lot.supplier}</td><td>{lot.consigned ? "Consignado" : "Próprio"}{purchase && " · " + purchaseStatus(state, lot.purchaseId, purchase.acquisition)}</td><td>{lot.quantity} un.</td>{showPurchases && <td>{money(lot.unitCost)}{purchase && <small><Link className="back-link" href={adminUrl("compras", purchase.store) + "&ficha=" + purchase.id}>Abrir compra</Link></small>}</td>}</tr>;
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
+      <StockPagination name="lotes em estoque" page={stockLots} href={(number) => pageUrl("lotesPagina", number, "lotes-estoque")} />
       <p className="admin-empty">Para vender unidades antigas sem lote, registre a compra em Compras e marque a opção de vincular ao saldo já existente.</p>
     </section>
     <section id="movimentacoes-estoque" className="panel"><div className="panel-title"><h2>Histórico de movimentações</h2></div>
-      {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.slice(start, start + pageSize).map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store, state)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
-      {pageCount > 1 && <nav className="panel-title" aria-label="Páginas do histórico de movimentações">
-        <span>Página {page} de {pageCount} · {start + 1}–{Math.min(start + pageSize, movements.length)} de {movements.length}</span>
-        <div className="workspace-section-links">
-          {page > 1 && <Link href={historyUrl(page - 1)}>Anterior</Link>}
-          {page < pageCount && <Link href={historyUrl(page + 1)}>Próxima</Link>}
-        </div>
-      </nav>}
+      {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.slice(history.start, history.start + stockPageSize).map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store, state)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
+      <StockPagination name="histórico de movimentações" page={history} href={(number) => pageUrl("movimentosPagina", number, "movimentacoes-estoque")} />
     </section>
   </>;
 }
@@ -621,7 +644,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; movimentosPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -695,8 +718,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
         </div>
-        {!denied && state && supportsSearch && <RecordSearch key={active.id + ":" + filter + ":" + (category ?? "")}
-          tab={active.id} store={filter} category={active.id === "estoque" ? category : undefined} query={query} />}
+        {!denied && state && supportsSearch && active.id !== "estoque" && <RecordSearch key={active.id + ":" + filter + ":" + (category ?? "")}
+          tab={active.id} store={filter} query={query} />}
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
         {state && !invoices && <p className="feedback error" role="alert">Não foi possível carregar os anexos de notas fiscais.</p>}
@@ -720,7 +743,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <nav aria-label="Seções do estoque" className="workspace-section-links">
               <a href="#lotes-estoque">Lotes em estoque</a><a href="#movimentacoes-estoque">Movimentações</a>
             </nav>
-            <Stock query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />
+            <Stock balancePage={params.saldosPagina} lotPage={params.lotesPagina} query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />
           </>}
           {active.id === "compras" && <Purchases query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
