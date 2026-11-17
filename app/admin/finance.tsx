@@ -148,12 +148,12 @@ function Currency({ name, label, value, required = false }: { name: string; labe
   return <label>{label}<input name={name} type="number" min={required ? ".01" : "0"} step=".01" max="99999999.99" required={required} defaultValue={value == null ? "" : value / 100} /></label>;
 }
 
-export function StoreItemForm({ kind, store, item, staffPage = false, units = [] }: { kind: StoreKind; store: StoreId; item?: StoreItem; staffPage?: boolean; units?: ReturnType<typeof storeList> }) {
+export function StoreItemForm({ kind, store, item, staffPage = false, units = [], returnFilter = store }: { kind: StoreKind; store: StoreId; item?: StoreItem; staffPage?: boolean; units?: ReturnType<typeof storeList>; returnFilter?: string }) {
   const staff = item && "job" in item ? item : undefined;
   const fixed = item && "day" in item ? item : undefined;
   const asset = item && "quantity" in item ? item : undefined;
   return <form className="admin-form" action={saveStoreItem}>
-    <HiddenFilter filter={store} />{staffPage && <input type="hidden" name="staffPage" value="1" />}
+    <HiddenFilter filter={returnFilter} />{staffPage && <><input type="hidden" name="staffPage" value="1" />{item && <input type="hidden" name="focus" value={item.id} />}</>}
     {staffPage && !item ? <label>Unidade<select name="store" defaultValue={store} required>
       <option value="" disabled>Selecione a unidade</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
     </select></label> : <input type="hidden" name="store" value={store} />}<input type="hidden" name="kind" value={kind} /><input type="hidden" name="id" value={item?.id ?? ""} />

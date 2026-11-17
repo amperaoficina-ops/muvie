@@ -62,6 +62,7 @@ const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
 const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
+  funcionarios: { label: "Cadastrar funcionário", target: "novo-funcionario" },
   fornecedores: { label: "Novo fornecedor", target: "novo-fornecedor" },
   estoque: { label: "Movimentar estoque", target: "movimentar-estoque" },
   produtos: { label: "Novo produto", target: "novo-produto" },
@@ -834,7 +835,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 
   const group = navGroups.find(({ tabs }) => tabs.includes(active.id))?.title;
   const primary = moduleActions[active.id];
-  const actionBesideUnits = active.id === "crm" || active.id === "estoque" || active.id === "compras";
+  const actionBesideUnits = active.id === "crm" || active.id === "estoque" || active.id === "compras" || active.id === "funcionarios";
   const shortcuts = [
     ["vendas", "Nova venda", "Registrar cliente, produtos e pagamento"],
     ["compras", "Registrar compra", "Lançar fornecedor e entrada de produtos"],
@@ -907,7 +908,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
-          {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
+          {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
