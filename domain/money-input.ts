@@ -9,3 +9,9 @@ export function parseReais(raw: string): number | null {
   const [reais, cents = ""] = normalized.split(".");
   return Number(reais) * 100 + Number(cents.padEnd(2, "0"));
 }
+
+export function completePaymentAmounts(total: number, amounts: string[]): string[] {
+  const preceding = amounts.slice(0, -1);
+  const allocated = preceding.reduce((sum, value) => sum + (parseReais(value) ?? 0), 0);
+  return [...preceding, (Math.max(0, total - allocated) / 100).toFixed(2).replace(".", ",")];
+}

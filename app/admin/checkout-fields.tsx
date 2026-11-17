@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
-import { parseReais } from "@/domain/money-input";
+import { completePaymentAmounts, parseReais } from "@/domain/money-input";
 
 type Item = { key: number; productId: string; quantity: number; gift: boolean; origin: string; override?: string };
 type Payment = { key: number; method: typeof paymentMethods[number]; value: string; rateId: string; received: boolean; due: string };
@@ -43,17 +43,18 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
     if (remaining || override === null) missingCost = true;
     else cost += item.override?.trim() ? override * item.quantity : override;
   }
-  const fees = payments.reduce((sum, payment) => {
+  const amounts = completePaymentAmounts(total, payments.map((payment) => payment.value));
+  const fees = payments.reduce((sum, payment, index) => {
     const rate = payment.method === "Cartão" ? rates.find((item) => item.id === payment.rateId) : undefined;
-    return sum + (rate ? cardQuote(payments.length === 1 ? total : parseReais(payment.value) ?? 0, rate).fee : 0);
+    return sum + (rate ? cardQuote(parseReais(amounts[index]) ?? 0, rate).fee : 0);
   }, 0);
-  const receivedGross = payments.reduce((sum, payment) => sum + (payment.received ? (payments.length === 1 ? total : parseReais(payment.value) ?? 0) : 0), 0);
-  const receivedFees = payments.reduce((sum, payment) => {
+  const receivedGross = payments.reduce((sum, payment, index) => sum + (payment.received ? (parseReais(amounts[index]) ?? 0) : 0), 0);
+  const receivedFees = payments.reduce((sum, payment, index) => {
     const rate = payment.received && payment.method === "Cartão" ? rates.find((item) => item.id === payment.rateId) : undefined;
-    return sum + (rate ? cardQuote(payments.length === 1 ? total : parseReais(payment.value) ?? 0, rate).fee : 0);
+    return sum + (rate ? cardQuote(parseReais(amounts[index]) ?? 0, rate).fee : 0);
   }, 0);
   const commission = Math.round(total * (sellers.find((seller) => seller.id === sellerId)?.commissionBps ?? 0) / 10000);
-  const entered = payments.length === 1 ? total : payments.reduce((sum, payment) => sum + (parseReais(payment.value) ?? 0), 0);
+  const entered = amounts.reduce((sum, value) => sum + (parseReais(value) ?? 0), 0);
   const patchItem = (key: number, update: Partial<Item>) => setItems(items.map((item) => item.key === key ? { ...item, ...update } : item));
   const patchPayment = (key: number, update: Partial<Payment>) => setPayments(payments.map((item) => item.key === key ? { ...item, ...update } : item));
   return <>
@@ -91,7 +92,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
       <legend>Pagamentos</legend>
       {payments.map((payment, index) => <div className="checkout-row span-two" key={payment.key}>
         <label>Forma<select name="checkoutMethod" value={payment.method} onChange={(event) => patchPayment(payment.key, { method: paymentMethods.find((item) => item === event.target.value) ?? "Pix" })}>{paymentMethods.map((method) => <option key={method}>{method}</option>)}</select></label>
-        <label>Valor (R$)<input name="checkoutAmount" inputMode="decimal" readOnly={payments.length === 1} value={payments.length === 1 ? (total / 100).toFixed(2).replace(".", ",") : payment.value} required onChange={(event) => patchPayment(payment.key, { value: event.target.value })} /></label>
+        <label>{index === payments.length - 1 ? "Saldo automático (R$)" : "Valor (R$)"}<input name="checkoutAmount" inputMode="decimal" readOnly={index === payments.length - 1} value={amounts[index]} required onChange={(event) => patchPayment(payment.key, { value: event.target.value })} /></label>
         {payment.method === "Cartão" ? <label>Taxa da maquininha<select name="checkoutRate" required value={payment.rateId} onChange={(event) => patchPayment(payment.key, { rateId: event.target.value })}>
           <option value="">Selecione</option>{rates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {rate.mode} · {rate.installments}x · {rate.basisPoints / 100}%</option>)}</select></label> : <input type="hidden" name="checkoutRate" value="" />}
         <label>Recebimento<select name="checkoutStatus" value={payment.received ? "received" : "pending"} onChange={(event) => patchPayment(payment.key, { received: event.target.value === "received" })}>

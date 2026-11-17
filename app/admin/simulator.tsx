@@ -3,7 +3,7 @@
 import "./simulator.css";
 import { useState } from "react";
 import { money, paymentMethods, percentageAmount, type Store, type CardRate, type TaxRate } from "@/domain/retail";
-import { parseReais } from "@/domain/money-input";
+import { completePaymentAmounts, parseReais } from "@/domain/money-input";
 import { proposalQuote, type ProposalProduct } from "@/domain/proposal";
 
 export function Simulator({ products, rates, initialStore, stores, taxRates, showFinance }: {
@@ -19,9 +19,10 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
   const [manualTax, setManualTax] = useState("");
   const available = products.filter((item) => item.stock[store] > 0 && item.price > 0);
   const base = proposalQuote(products, rates, store, items, [{ method: "Pix", amount: "", rateId: "" }], discount);
-  const entered = payments.reduce((sum, payment) => sum + (parseReais(payment.amount) ?? 0), 0);
+  const amounts = completePaymentAmounts(base?.total ?? 0, payments.map((payment) => payment.amount));
+  const entered = amounts.reduce((sum, value) => sum + (parseReais(value) ?? 0), 0);
   const difference = base ? base.total - entered : 0;
-  const quote = proposalQuote(products, rates, store, items, payments, discount);
+  const quote = proposalQuote(products, rates, store, items, payments.map((payment, index) => ({ ...payment, amount: amounts[index] })), discount);
   const rate = taxRates.find((item) => item.id === taxMode) ?? taxRates.find((item) => item.defaultForSale);
   const tax = taxMode === "manual" ? parseReais(manualTax) : percentageAmount(quote?.total ?? 0, rate?.basisPoints ?? 0);
 
@@ -50,7 +51,7 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
             <label>Forma de pagamento<select value={payment.method} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, method: event.target.value } : row))}>
               {paymentMethods.map((method) => <option key={method}>{method}</option>)}
             </select></label>
-            {payments.length > 1 && <label>Valor (R$)<input value={payment.amount} inputMode="decimal" onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, amount: event.target.value } : row))} /></label>}
+            {payments.length > 1 && <label>{index === payments.length - 1 ? "Saldo automático (R$)" : "Valor (R$)"}<input value={amounts[index]} readOnly={index === payments.length - 1} inputMode="decimal" onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, amount: event.target.value } : row))} /></label>}
             {payment.method === "Cartão" && <label>Condição de cartão<select value={payment.rateId} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, rateId: event.target.value } : row))}>
               {!rates.length && <option value="">Nenhuma taxa cadastrada</option>}
               {rates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.mode} · {item.installments}×</option>)}
@@ -58,7 +59,7 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
             {payments.length > 1 && <button type="button" className="button danger" onClick={() => setPayments(payments.filter((_, i) => i !== index))}>Remover pagamento</button>}
           </div>)}
           {base && payments.length > 1 && <p className="form-note span-two">
-            {difference === 0 ? "Valores somam o total da proposta." : difference > 0
+            {difference === 0 ? (parseReais(amounts[amounts.length - 1]) ? "O último pagamento completa o total automaticamente." : "Os pagamentos anteriores já cobrem o total. Remova o último ou reduza os valores anteriores.") : difference > 0
               ? "Falta distribuir " + money(difference) : "Os pagamentos excedem o total em " + money(-difference)}
           </p>}
           <button type="button" className="button" disabled={payments.length >= 10} onClick={() => setPayments([...payments, { method: "Pix", amount: "", rateId: rates[0]?.id ?? "" }])}>Combinar pagamento</button>
@@ -86,7 +87,7 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
           <input type="hidden" name="store" value={store} /><input type="hidden" name="customer" value={customer} />
           <input type="hidden" name="discount" value={discount} />
           {items.map((item, index) => <div key={index}><input type="hidden" name="product" value={item.productId} /><input type="hidden" name="quantity" value={item.quantity} /></div>)}
-          {payments.map((payment, index) => <div key={index}><input type="hidden" name="method" value={payment.method} /><input type="hidden" name="amount" value={payment.amount} /><input type="hidden" name="rate" value={payment.rateId} /></div>)}
+          {payments.map((payment, index) => <div key={index}><input type="hidden" name="method" value={payment.method} /><input type="hidden" name="amount" value={amounts[index]} /><input type="hidden" name="rate" value={payment.rateId} /></div>)}
           <button type="submit" className="button yellow">Baixar PDF da proposta</button>
         </form>
         {showFinance && <details className="simulator-finance"><summary>Detalhes financeiros</summary><dl>
