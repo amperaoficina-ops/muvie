@@ -603,12 +603,25 @@ function StockPagination({ name, page, href }: { name: string; page: ReturnType<
   </nav>;
 }
 
-function Stock({ state, filter, category, showPurchases, movementPage, balancePage, lotPage, query, view, error }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; movementPage?: string; balancePage?: string; lotPage?: string; query: string; view: string; error?: string }) {
+function Stock({ state, filter, category, showPurchases, showCost, movementPage, balancePage, lotPage, query, view, error }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; showCost: boolean; movementPage?: string; balancePage?: string; lotPage?: string; query: string; view: string; error?: string }) {
   const products = state.products.filter((product) => (!category || product.category === category) && matchesSearch(query, product.name, product.sku, product.category));
   const ids = new Set(products.map((product) => product.id));
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
   const movements = state.movements.filter((movement) => (!(category || query) || ids.has(movement.productId)) && (!filter || movement.store === filter));
   const lots = state.stockLots.filter((item) => item.quantity > 0 && (!(category || query) || ids.has(item.productId)) && (!filter || item.store === filter));
+  const { invested, consigned, tracked } = lots.reduce((totals, lot) => {
+    totals[lot.consigned ? "consigned" : "invested"] += lot.quantity * lot.unitCost;
+    totals.tracked += lot.quantity;
+    return totals;
+  }, { invested: 0, consigned: 0, tracked: 0 });
+  const position = products.reduce((totals, product) => {
+    const quantity = columns.reduce((sum, store) => sum + (product.stock[store.id] ?? 0), 0);
+    totals.quantity += quantity;
+    totals.retail += quantity * product.price;
+    if (!product.price) totals.unpriced += quantity;
+    return totals;
+  }, { quantity: 0, retail: 0, unpriced: 0 });
+  const untracked = Math.max(0, position.quantity - tracked);
   const colorsByStore = productColorStock(lots);
   const balances = stockPage(products.length, balancePage);
   const stockLots = stockPage(lots.length, lotPage);
@@ -628,6 +641,18 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
     <RecordSearch key={view + ":" + filter + ":" + (category ?? "")} tab="estoque" store={filter} category={category} query={query} view={view} />
   </div>;
   return <>
+    <div className="metrics-grid" aria-label="Valores do estoque">
+      {showCost && <>
+        <article className="panel metric"><span>Valor total do estoque</span><strong>{money(invested + consigned)}</strong>
+          <small>{untracked ? `${untracked} un. sem custo de lote` : "Custo registrado dos lotes em saldo"}</small></article>
+        <article className="panel metric"><span>Valor total consignado</span><strong>{money(consigned)}</strong>
+          <small>Custo de repasse das unidades em saldo</small></article>
+        <article className="panel metric"><span>Valor total investido</span><strong>{money(invested)}</strong>
+          <small>Custo de compra do estoque próprio em saldo</small></article>
+      </>}
+      <article className="panel metric"><span>Valor estimado de venda</span><strong>{money(position.retail)}</strong>
+        <small>{position.unpriced ? `${position.unpriced} un. sem preço de venda` : "Saldo ao preço cheio de venda"}</small></article>
+    </div>
     <nav className="branch-filter" aria-label="Seções do estoque">
       {stockViews.map(({ id, label }) => <Link key={id} aria-current={view === id ? "page" : undefined}
         href={adminUrl("estoque", filter) + "&" + new URLSearchParams({ estoqueVisao: id, ...(category ? { categoria: category } : {}), ...(query ? { busca: query } : {}) })}>{label}</Link>)}
@@ -1046,7 +1071,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "produtos" && <Products category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings requestedPage={params.catalogoPagina} state={state} showProducts={canAccess(user, "produtos")} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} canReturn={isDirector(user)} />}
-          {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
+          {active.id === "estoque" && <Stock showCost={showPurchases || analyticsAccess.finance} view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
           {active.id === "compras" && <Purchases canCancel={user.role === "admin" || isPrimaryAdmin(user)} canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} success={params.ok} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
