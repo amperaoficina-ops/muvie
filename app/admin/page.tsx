@@ -1,3 +1,4 @@
+import { ModelCard } from "../catalog";
 import { SupplierField } from "./supplier-field";
 import { SearchSelect } from "./search-select";
 import { TaxSettings } from "./tax-settings";
@@ -192,18 +193,39 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
   </section>;
 }
 
-function CatalogSettings({ state }: { state: RetailState }) {
-  const vehicles = state.products.filter((p) => p.category === "Scooter elétrica" || p.category === "Bicicleta elétrica");
+function CatalogSettings({ state, showProducts }: { state: RetailState; showProducts: boolean }) {
+  const vehicles = state.products.filter((product) => product.category === "Scooter elétrica" || product.category === "Bicicleta elétrica");
   return <section className="panel">
     <div className="panel-title"><h2>Modelos no site</h2><Link className="back-link" href="/modelos">Ver catálogo público →</Link></div>
-    {vehicles.length ? <div className="editable-list">{vehicles.map((product) => <details name="product-record" key={product.id}>
-      <summary><strong>{product.name}</strong><span className="pill">{product.published ? "Publicado" : "Oculto"}</span></summary>
-      <form action={savePublication} className="admin-form">
-        <input type="hidden" name="id" value={product.id} />
-        <label className="checkbox"><input type="checkbox" name="published" defaultChecked={product.published} /> Exibir no catálogo público</label>
-        <div><Submit>Salvar publicação</Submit></div>
-      </form>
-    </details>)}</div> : <Empty>Cadastre um modelo em Produtos para publicar no site.</Empty>}
+    {vehicles.length ? <Table headers={["Modelo", "Publicação", "Dados a completar", "Ações"]}>
+      {vehicles.map((product) => {
+        const missing = [
+          ...(!product.imageUrl ? ["Foto"] : []), ...(!product.description?.trim() ? ["Descrição"] : []),
+          ...(!product.price || product.sku.startsWith("DEMO-") ? ["Preço de venda"] : []),
+          ...scooterFields.filter(({ key }) => !product.specs?.[key]?.trim()).map(({ label }) => label),
+        ];
+        return <tr key={product.id}>
+          <td><strong>{product.name}</strong><small>{product.sku}</small></td>
+          <td><span className={"pill " + (product.published ? "green" : "")}>{product.published ? "Publicado" : "Oculto"}</span></td>
+          <td><div className="inventory-tags">
+            {missing.length ? missing.map((label) => <span className="pill" key={label}>{label}</span>) : <span className="pill green">Dados completos</span>}
+          </div></td>
+          <td><div className="sale-statuses">
+            <DetailsDialog id={"preview-" + product.id} title="Prévia no catálogo" trigger="Ver prévia">
+              <div className="sale-detail-content">
+                <div className="site" style={{ width: "100%", maxWidth: 430, marginInline: "auto" }}><ModelCard product={product} /></div>
+              </div>
+            </DetailsDialog>
+            <form action={savePublication}>
+              <input type="hidden" name="id" value={product.id} />
+              {!product.published && <input type="hidden" name="published" value="on" />}
+              {product.published ? <button type="submit" className="button">Despublicar</button> : <Submit>Publicar</Submit>}
+            </form>
+            {showProducts && <Link className="button" href={adminUrl("produtos") + "&ficha=" + encodeURIComponent(product.id)}>Editar produto</Link>}
+          </div></td>
+        </tr>;
+      })}
+    </Table> : <Empty>Cadastre um modelo em Produtos para publicar no site.</Empty>}
   </section>;
 }
 
@@ -363,6 +385,7 @@ function StructureAssetForm({ state, filter, asset }: { state: RetailState; filt
   return <form className="admin-form" action={saveStoreItem}>
     <FilterInput filter={filter} />
     <input type="hidden" name="assetPage" value="1" /><input type="hidden" name="kind" value="asset" />
+    {!asset && <input type="hidden" name="assetId" value={randomUUID()} />}
     {asset && <><input type="hidden" name="id" value={asset.id} /><input type="hidden" name="focus" value={asset.id} /></>}
     <label>Nome do bem<input name="name" required maxLength={100} defaultValue={asset?.name} /></label>
     <StoreField units={storeList(state)} filter={asset?.store ?? filter} />
@@ -370,6 +393,7 @@ function StructureAssetForm({ state, filter, asset }: { state: RetailState; filt
     <label>Valor total de aquisição (R$)<input name="amount" inputMode="decimal" maxLength={32} defaultValue={asset ? (asset.amount / 100).toFixed(2).replace(".", ",") : ""} /></label>
     <label>Data de aquisição<input name="acquiredOn" type="date" defaultValue={asset?.acquiredOn} required={!asset} /></label>
     <label className="span-two">Localização ou observações<textarea name="notes" maxLength={500} rows={3} defaultValue={asset?.notes} /></label>
+    {!asset && <div className="span-two"><AttachmentPicker name="invoice" label="Selecionar comprovante fiscal (opcional)" accept=".pdf,.xml" hint="PDF ou XML · até 8 MB" /></div>}
     <div className="span-two"><Submit>Salvar bem</Submit></div>
   </form>;
 }
@@ -380,6 +404,7 @@ function CompanyAssets({ state, filter, showSales, invoices, focus, error, succe
   const sold = assets.filter((item) => item.resale);
   const structure = state.assets.filter((item) => !filter || item.store === filter);
   const totalTradeIns = tradeIns.reduce((sum, item) => sum + (item.received ? item.amount : 0), 0);
+  const focusedStructure = structure.some((item) => item.id === focus);
   const totalStructure = structure.reduce((sum, item) => sum + item.amount, 0);
   return <>
     <div className="dashboard-values">
@@ -418,8 +443,8 @@ function CompanyAssets({ state, filter, showSales, invoices, focus, error, succe
     </section>}
     <section className="panel">
       <div className="panel-title"><h2>Estrutura das lojas</h2><a className="button yellow" href="#novo-bem">＋ Adicionar novo bem</a></div>
-      <CreateDialog id="novo-bem" title="Adicionar bem de estrutura" reopen={Boolean(error && !focus)}>
-        {error && !focus && <p className="feedback error" role="alert">{error}</p>}
+      <CreateDialog id="novo-bem" title="Adicionar bem de estrutura" reopen={Boolean(error && !focusedStructure)}>
+        {error && !focusedStructure && <p className="feedback error" role="alert">{error}</p>}
         <StructureAssetForm state={state} filter={filter} />
       </CreateDialog>
       {structure.length ? <Table headers={["Bem", "Unidade", "Quantidade", "Valor de aquisição", "Data de aquisição", "Ação"]}>
@@ -942,7 +967,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}
           </>}
           {active.id === "produtos" && <Products category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
-          {active.id === "catalogo" && <CatalogSettings state={state} />}
+          {active.id === "catalogo" && <CatalogSettings state={state} showProducts={canAccess(user, "produtos")} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}

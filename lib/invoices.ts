@@ -31,7 +31,7 @@ export async function getInvoice(id: string) {
   return (await collection()).findOne({ _id: id });
 }
 
-export async function storeInvoice(owner: InvoiceOwner, ownerId: string, kind: InvoiceKind, file: File) {
+export async function prepareInvoice(owner: InvoiceOwner, ownerId: string, kind: InvoiceKind, file: File) {
   if (!file.size || file.size > 8 * 1024 * 1024) throw new RetailError("Selecione um PDF ou XML de até 8 MB.");
   const data = Buffer.from(await file.arrayBuffer());
   const name = (file.name.split(/[\\/]/).pop() ?? "").replace(/[\p{C}]/gu, "").trim();
@@ -43,5 +43,12 @@ export async function storeInvoice(owner: InvoiceOwner, ownerId: string, kind: I
     owner, ownerId, kind, name, mime: pdf ? "application/pdf" : "application/xml",
     createdAt: new Date(), data: new Binary(data),
   };
-  await (await collection()).updateOne({ _id: id }, { $setOnInsert: document }, { upsert: true });
+  return async () => {
+    await (await collection()).updateOne({ _id: id }, { $setOnInsert: document }, { upsert: true });
+  };
+}
+
+export async function storeInvoice(owner: InvoiceOwner, ownerId: string, kind: InvoiceKind, file: File) {
+  const persist = await prepareInvoice(owner, ownerId, kind, file);
+  await persist();
 }

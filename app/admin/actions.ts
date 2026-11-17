@@ -14,7 +14,7 @@ import { accessFor, canAccess, isPrimaryAdmin, moduleKeys, roles, invoiceModule,
 import { getMongoDb } from "@/lib/mongodb";
 import { hashPassword } from "@/lib/security";
 import { storeProductPhoto } from "@/lib/product-photos";
-import { invoiceKinds, invoiceOwners, storeInvoice } from "@/lib/invoices";
+import { invoiceKinds, invoiceOwners, prepareInvoice, storeInvoice } from "@/lib/invoices";
 import { editRetail, readRetail } from "@/lib/retail-store";
 
 const storeIds = (state: RetailState) => storeList(state).map((store) => store.id);
@@ -432,41 +432,60 @@ function requiredDate(form: FormData, key: string, allowFuture = false) {
 }
 
 export async function saveStoreItem(form: FormData) {
-  const newId = randomUUID();
+  const requestedId = form.get("assetId");
+  const assetId = typeof requestedId === "string" && uuidPattern.test(requestedId) ? requestedId : randomUUID();
+  const newId = form.get("assetPage") === "1" ? assetId : randomUUID();
   const tab = form.get("assetPage") === "1" ? "bens" : form.get("staffPage") === "1" ? "funcionarios" : "lojas";
-  await commit(form, tab, "Cadastro da unidade atualizado.", (state) => {
-    const store = choice(form, "store", storeIds(state));
-    const kind = choice(form, "kind", ["staff", "fixed", "asset"]);
-    if (tab === "bens" && kind !== "asset") throw new RetailError("Selecione um bem de estrutura.");
-    if (tab === "funcionarios" && kind !== "staff") throw new RetailError("Selecione um cadastro de funcionário.");
-    const id = value(form, "id", 36, false);
-    const fields = { id: id || newId, store, name: value(form, "name", 100) };
-    if (kind === "staff") {
-      const commissionBps = amount(form, "commission");
-      if (commissionBps > 10000) throw new RetailError("A comissão deve ser de até 100%.");
-      const item = { ...fields, salary: amount(form, "salary"), commissionBps, job: value(form, "job", 70), active: form.get("active") === "on" };
-      const existing = state.staff.find((row) => row.id === id && row.store === store);
-      if (id && !existing) throw new RetailError("Funcionário não encontrado nesta unidade.");
-      if (existing) Object.assign(existing, item);
-      else state.staff.push(item);
-    } else if (kind === "fixed") {
-      const day = Number(value(form, "day", 2));
-      const cost = amount(form, "amount");
-      if (!Number.isInteger(day) || day < 1 || day > 31 || cost <= 0) throw new RetailError("Informe um valor positivo e um dia de 1 a 31.");
-      const item = { ...fields, amount: cost, day, active: form.get("active") === "on" };
-      const existing = state.fixedCosts.find((row) => row.id === id && row.store === store);
-      if (id && !existing) throw new RetailError("Custo fixo não encontrado nesta unidade.");
-      if (existing) Object.assign(existing, item);
-      else state.fixedCosts.push(item);
-    } else {
-      const acquiredOn = tab === "bens" ? value(form, "acquiredOn", 10, !id) : "";
-      if (acquiredOn && (!isCalendarDate(acquiredOn) || acquiredOn > localToday())) throw new RetailError("Informe uma data de aquisição válida, até hoje.");
-      const item = { ...fields, quantity: units(form), amount: amount(form, "amount"), notes: value(form, "notes", 500, false),
-        ...(acquiredOn ? { acquiredOn } : {}) };
-      const existing = state.assets.find((row) => row.id === id && (tab === "bens" || row.store === store));
-      if (id && !existing) throw new RetailError("Item de estrutura não encontrado nesta unidade.");
-      if (existing) Object.assign(existing, item);
-      else state.assets.push(item);
+  const message = tab === "bens" ? "Bem salvo." : "Cadastro da unidade atualizado.";
+  if (tab === "bens" && !form.get("id") && form.get("invoice") instanceof File) form.set("focus", newId);
+  await runAction(form, tab, message, async (user) => {
+    const file = form.get("invoice");
+    const persist = tab === "bens" && !form.get("id") && file instanceof File && file.size
+      ? await prepareInvoice("asset", newId, "Compra", file) : undefined;
+    await editWithAudit(user, message, (state) => {
+      const store = choice(form, "store", storeIds(state));
+      const kind = choice(form, "kind", ["staff", "fixed", "asset"]);
+      if (tab === "bens" && kind !== "asset") throw new RetailError("Selecione um bem de estrutura.");
+      if (tab === "funcionarios" && kind !== "staff") throw new RetailError("Selecione um cadastro de funcionário.");
+      const id = value(form, "id", 36, false);
+      const fields = { id: id || newId, store, name: value(form, "name", 100) };
+      if (kind === "staff") {
+        const commissionBps = amount(form, "commission");
+        if (commissionBps > 10000) throw new RetailError("A comissão deve ser de até 100%.");
+        const item = { ...fields, salary: amount(form, "salary"), commissionBps, job: value(form, "job", 70), active: form.get("active") === "on" };
+        const existing = state.staff.find((row) => row.id === id && row.store === store);
+        if (id && !existing) throw new RetailError("Funcionário não encontrado nesta unidade.");
+        if (existing) Object.assign(existing, item);
+        else state.staff.push(item);
+      } else if (kind === "fixed") {
+        const day = Number(value(form, "day", 2));
+        const cost = amount(form, "amount");
+        if (!Number.isInteger(day) || day < 1 || day > 31 || cost <= 0) throw new RetailError("Informe um valor positivo e um dia de 1 a 31.");
+        const item = { ...fields, amount: cost, day, active: form.get("active") === "on" };
+        const existing = state.fixedCosts.find((row) => row.id === id && row.store === store);
+        if (id && !existing) throw new RetailError("Custo fixo não encontrado nesta unidade.");
+        if (existing) Object.assign(existing, item);
+        else state.fixedCosts.push(item);
+      } else {
+        const acquiredOn = tab === "bens" ? value(form, "acquiredOn", 10, !id) : "";
+        if (acquiredOn && (!isCalendarDate(acquiredOn) || acquiredOn > localToday())) throw new RetailError("Informe uma data de aquisição válida, até hoje.");
+        const item = { ...fields, quantity: units(form), amount: amount(form, "amount"), notes: value(form, "notes", 500, false),
+          ...(acquiredOn ? { acquiredOn } : {}) };
+        const existing = state.assets.find((row) => row.id === id && (tab === "bens" || row.store === store));
+        if (id && !existing) throw new RetailError("Item de estrutura não encontrado nesta unidade.");
+        if (existing) Object.assign(existing, item);
+        else {
+          if (state.assets.some((row) => row.id === newId)) throw new RetailError("Este bem já foi salvo. Use Ver detalhes e editar para anexar o comprovante.");
+          state.assets.push(item);
+        }
+      }
+    });
+    if (persist) {
+      try {
+        await persist();
+      } catch {
+        throw new RetailError("O bem foi salvo. O comprovante não foi anexado. Tente novamente em Ver detalhes e editar.");
+      }
     }
   });
 }
