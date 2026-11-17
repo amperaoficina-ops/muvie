@@ -15,7 +15,7 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, money, saleNetProfit, productCategories, stages, stockComposition, storeName, storeList,
+  balanceDue, money, saleNetProfit, tradeInAssets, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
 import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier } from "./actions";
@@ -39,6 +39,7 @@ const nav = [
   { id: "estoque", label: "Estoque", icon: "box", description: "Consulte saldos, registre movimentações e transfira produtos entre unidades." },
   { id: "compras", label: "Compras", icon: "bag", description: "Registre compras, dê entrada na unidade correta e organize as notas de fornecedores." },
   { id: "vendas", label: "Vendas", icon: "bag", description: "Registre vendas por unidade e acompanhe o histórico de cada operação." },
+  { id: "bens", label: "Bens", icon: "box", description: "Acompanhe os bens da empresa e os produtos recebidos em troca por unidade." },
   { id: "fornecedores", label: "Fornecedores", icon: "users", description: "Cadastre os fornecedores usados nas compras." },
   { id: "funcionarios", label: "Funcionários", icon: "users", description: "Acompanhe equipe, remuneração, vendas do mês e vales por unidade." },
   { id: "financeiro", label: "Financeiro", icon: "grid", description: "Acompanhe DRE, caixa, contas a pagar e a receber por unidade.", admin: true },
@@ -56,7 +57,7 @@ const nav = [
 type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
-  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "financeiro", "taxas", "impostos", "usuarios", "logs"] },
+  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "taxas", "impostos", "usuarios", "logs"] },
   { title: "Lojas", tabs: ["lojas"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
@@ -353,6 +354,37 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
         <div className="span-two"><Submit>Registrar compra</Submit></div>
       </form> : <Empty><Link href={adminUrl("produtos", filter)}>Cadastre um produto para registrar compras →</Link></Empty>}
     </CreateDialog>
+  </>;
+}
+
+function CompanyAssets({ state, filter, showSales }: { state: RetailState; filter: Filter; showSales: boolean }) {
+  const tradeIns = tradeInAssets(state, filter || undefined);
+  const structure = state.assets.filter((item) => !filter || item.store === filter);
+  const totalTradeIns = tradeIns.reduce((sum, item) => sum + (item.received ? item.amount : 0), 0);
+  const totalStructure = structure.reduce((sum, item) => sum + item.amount, 0);
+  return <>
+    <div className="dashboard-values">
+      <div><p>Bens recebidos em troca</p><strong>{money(totalTradeIns)}</strong></div>
+      <div><p>Estrutura cadastrada nas lojas</p><strong>{money(totalStructure)}</strong></div>
+    </div>
+    <section className="panel">
+      <div className="panel-title"><h2>Bens de troca</h2></div>
+      {tradeIns.length ? <Table headers={["Bem", "Unidade", "Cliente", "Data da venda", "Valor acordado", "Status", ...(showSales ? ["Ação"] : [])]}>
+        {tradeIns.map((item) => <tr key={item.id}>
+          <td><strong>{item.name}</strong></td><td>{storeName(item.store, state)}</td><td>{item.customer}</td>
+          <td>{dateLabel(item.createdAt)}</td><td>{money(item.amount)}</td><td><span className={"pill " + (item.received ? "green" : "")}>{item.received ? "Recebido" : "A receber"}</span></td>
+          {showSales && <td><Link className="button" href={adminUrl("vendas", item.store) + "&ficha=" + encodeURIComponent(item.saleId)}>Ver venda</Link></td>}
+        </tr>)}
+      </Table> : <Empty>Nenhum bem de troca nesta seleção.</Empty>}
+    </section>
+    <section className="panel">
+      <div className="panel-title"><h2>Estrutura das lojas</h2></div>
+      {structure.length ? <Table headers={["Bem", "Unidade", "Quantidade", "Valor de aquisição"]}>
+        {structure.map((item) => <tr key={item.id}>
+          <td><strong>{item.name}</strong></td><td>{storeName(item.store, state)}</td><td>{item.quantity}</td><td>{money(item.amount)}</td>
+        </tr>)}
+      </Table> : <Empty>Nenhum bem de estrutura nesta seleção.</Empty>}
+    </section>
   </>;
 }
 
@@ -851,6 +883,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
+          {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}

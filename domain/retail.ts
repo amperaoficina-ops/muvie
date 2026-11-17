@@ -53,7 +53,7 @@ export type Purchase = {
   specs?: ScooterSpecs;
 };
 export type SaleLine = { productId: string; productName: string; sku: string; quantity: number; unitPrice: number; total: number; cost: number; missingCostUnits: number; gift: boolean };
-export type SalePayment = { method: typeof paymentMethods[number]; amount: number; fee: number; rate?: CardRate; due: string; received: boolean };
+export type SalePayment = { assetDescription?: string; method: typeof paymentMethods[number]; amount: number; fee: number; rate?: CardRate; due: string; received: boolean };
 export type Sale = {
   id: string; store: StoreId; productId: string; productName: string; sku: string;
   customer: string; contactId: string; quantity: number; unitPrice: number;
@@ -165,6 +165,22 @@ export function postMonthlyCosts(state: RetailState, store: StoreId, month: stri
     state.ledger.unshift({ id, store, name: item.name, direction: "out", kind: item.kind, amount: item.amount, date: first,
       due: month + "-" + String(Math.min(item.day, lastDay)).padStart(2, "0"), settlements: [] });
   }
+}
+
+export function tradeInAssets(state: RetailState, store?: StoreId) {
+  const entries = new Map(state.ledger.map((entry) => [entry.id, entry]));
+  return state.sales.flatMap((sale) => {
+    if (sale.canceledAt || (store && sale.store !== store)) return [];
+    const payments = sale.payments ?? [{ method: sale.method, amount: sale.total, received: false, assetDescription: undefined }];
+    return payments.flatMap((payment, index) => {
+      if (payment.method !== "Produto") return [];
+      const id = sale.id + (sale.payments ? "-payment-" + index : "-receipt");
+      const entry = entries.get(id);
+      return [{ id, saleId: sale.id, store: sale.store, name: payment.assetDescription || "Produto recebido na troca",
+        amount: payment.amount, received: entry ? (!entry.canceled && balanceDue(entry) === 0) : payment.received,
+        customer: sale.customer, createdAt: sale.createdAt }];
+    });
+  });
 }
 
 export function saleNetProfit(sale: Sale) {
@@ -467,7 +483,7 @@ export function recordSale(state: RetailState, input: SaleInput, gift = false) {
 }
 
 export type CheckoutItem = { productId: string; quantity: number; origin: string; gift: boolean; unitCostOverride?: number };
-export type CheckoutPayment = { method: SalePayment["method"]; amount: number; received: boolean; due: string; rateId?: string };
+export type CheckoutPayment = { assetDescription?: string; method: SalePayment["method"]; amount: number; received: boolean; due: string; rateId?: string };
 export type CheckoutInput = Omit<SaleInput, "productId" | "quantity" | "method" | "origin" | "receive"> & {
   items: CheckoutItem[]; payments: CheckoutPayment[]; taxRateId?: string; manualTax?: number;
 };
@@ -497,7 +513,7 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
     if (!payment.received && (!isCalendarDate(payment.due) || payment.due < date)) throw new RetailError("Informe o vencimento dos pagamentos a receber.");
     const rate = payment.method === "Cartão" ? draft.cardRates.find((item) => item.id === payment.rateId) : undefined;
     if (payment.method === "Cartão" && !rate) throw new RetailError("Selecione a taxa da maquininha para cada pagamento em cartão.");
-    return { method: payment.method, amount: payment.amount, fee: rate ? cardQuote(payment.amount, rate).fee : 0,
+    return { ...(payment.method === "Produto" && payment.assetDescription?.trim() && { assetDescription: payment.assetDescription.trim() }), method: payment.method, amount: payment.amount, fee: rate ? cardQuote(payment.amount, rate).fee : 0,
       rate, received: payment.received, due: payment.received ? date : payment.due };
   });
   if (payments.reduce((sum, payment) => sum + payment.amount, 0) !== total) throw new RetailError("A soma dos pagamentos deve ser igual ao total da venda.");

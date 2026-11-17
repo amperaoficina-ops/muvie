@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, returnConsignedLot, stockComposition, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -276,9 +276,15 @@ test("produto recebido na troca quita a venda sem entrar no caixa", () => {
   linkOldStock(state, "lote", "scooter", "palhoca", 300000);
   recordCheckout(state, { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "lote" }],
     payments: [{ method: "Pix", amount: 389900, received: true, due: "" },
-      { method: "Produto", amount: 200000, received: true, due: "" }] });
+      { method: "Produto", amount: 200000, received: true, due: "", assetDescription: "Scooter usada" }] });
   const report = financialReport(state, "2026-11-07", "2026-11-07", "palhoca");
   assert.equal(report.revenue, 589900);
   assert.equal(report.cash, 389900);
   assert.equal(report.receivable, 0);
+  assert.deepEqual(tradeInAssets(state, "palhoca").map(({ name, amount, received }) => ({ name, amount, received })), [
+    { name: "Scooter usada", amount: 200000, received: true },
+  ]);
+  assert.deepEqual(tradeInAssets(state, "sao-jose"), []);
+  cancelSale(state, input.id, date, true);
+  assert.deepEqual(tradeInAssets(state), []);
 });

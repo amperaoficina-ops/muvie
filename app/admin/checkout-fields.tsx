@@ -6,7 +6,7 @@ import { money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type 
 import { completePaymentAmounts, parseReais } from "@/domain/money-input";
 
 type Item = { key: number; productId: string; quantity: number; gift: boolean; origin: string; override?: string };
-type Payment = { key: number; method: typeof paymentMethods[number]; value: string; rateId: string; received: boolean; due: string };
+type Payment = { assetDescription?: string; key: number; method: typeof paymentMethods[number]; value: string; rateId: string; received: boolean; due: string };
 type SaleProduct = Pick<Product, "id" | "name" | "sku" | "price" | "stock">;
 
 export function CheckoutFields({ units, initialStore, products, lots, rates, sellers, showCost, taxRates }: {
@@ -98,6 +98,10 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
         <label>{index === payments.length - 1 ? "Saldo automático (R$)" : "Valor (R$)"}<input name="checkoutAmount" inputMode="decimal" readOnly={index === payments.length - 1} value={amounts[index]} required onChange={(event) => patchPayment(payment.key, { value: event.target.value })} /></label>
         {payment.method === "Cartão" ? <label>Taxa da maquininha<SearchSelect name="checkoutRate" required value={payment.rateId} onChange={(event) => patchPayment(payment.key, { rateId: event.target.value })}>
           <option value="">Selecione</option>{rates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {rate.mode} · {rate.installments}x · {rate.basisPoints / 100}%</option>)}</SearchSelect></label> : <input type="hidden" name="checkoutRate" value="" />}
+        {payment.method === "Produto" ? <label>Bem recebido na troca<input name="checkoutAsset" maxLength={120}
+          placeholder="Ex.: scooter X13 usada, celular ou carro" value={payment.assetDescription ?? ""}
+          onChange={(event) => patchPayment(payment.key, { assetDescription: event.target.value })} /></label>
+          : <input type="hidden" name="checkoutAsset" value="" />}
         <label>Recebimento<SearchSelect name="checkoutStatus" value={payment.received ? "received" : "pending"} onChange={(event) => patchPayment(payment.key, { received: event.target.value === "received" })}>
           <option value="received">Já recebido</option><option value="pending">A receber</option></SearchSelect></label>
         {payment.received ? <input type="hidden" name="checkoutDue" value="" /> : <label>Vencimento<input name="checkoutDue" type="date" required value={payment.due} onChange={(event) => patchPayment(payment.key, { due: event.target.value })} /></label>}

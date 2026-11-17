@@ -247,6 +247,7 @@ export async function saveSale(form: FormData) {
       if (!canAccess(user, "financeiro") && overrides.some((item) => String(item).trim())) throw new RetailError("Sem permissão para editar custos.");
       const kinds = form.getAll("checkoutKind");
       const methods = form.getAll("checkoutMethod");
+      const assets = form.getAll("checkoutAsset");
       const amounts = form.getAll("checkoutAmount");
       const rates = form.getAll("checkoutRate");
       const statuses = form.getAll("checkoutStatus");
@@ -264,7 +265,7 @@ export async function saveSale(form: FormData) {
           const paid = parseReais(String(amounts[index] ?? ""));
           if (!matched || paid === null) throw new RetailError("Confira os pagamentos da venda.");
           if (methods.length === 1 && paid === 0) return [];
-          return [{ method: matched, amount: paid, rateId: String(rates[index] ?? ""),
+          return [{ method: matched, amount: paid, assetDescription: matched === "Produto" ? String(assets[index] ?? "").trim().slice(0, 120) : undefined, rateId: String(rates[index] ?? ""),
             received: statuses[index] === "received", due: String(dates[index] ?? "") }];
         }),
       });
