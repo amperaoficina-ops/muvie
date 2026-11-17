@@ -352,6 +352,7 @@ function SaleDocuments({ sale, filter, invoices }: { sale: Sale; filter: Filter;
         <Submit>Salvar informações</Submit>
       </form>
       <a className="button sale-download" href={`/admin/vendas/${encodeURIComponent(sale.id)}/fiscal`} download><span>Baixar ficha fiscal</span><span className="pill">PDF</span></a>
+      <a className="button sale-download" href={`/admin/vendas/${encodeURIComponent(sale.id)}/fiscal?formato=xml`} download><span>Baixar prévia da NF-e</span><span className="pill">XML</span></a>
     </div>}
     <InvoiceBox owner="sale" id={sale.id} filter={filter} invoices={invoices} />
   </div></section>;

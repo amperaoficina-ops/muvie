@@ -5,7 +5,7 @@ import { businessDate, money, storeName } from "@/domain/retail";
 import { getCurrentUser } from "@/lib/auth";
 import { readRetail } from "@/lib/retail-store";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user || !canAccess(user, "vendas")) return new Response(null, { status: 403 });
   const { id } = await params;
@@ -15,7 +15,40 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const contact = state.contacts.find((item) => item.id === sale.contactId);
   const address = contact?.address;
-  const doc = new PDFDocument({ size: "A4", margin: 56 });
+  const items = sale.lines ?? [sale];
+  if (new URL(request.url).searchParams.get("formato") === "xml") {
+    const escape = (value: string | number) => String(value).replace(/[<>&"']/g,
+      (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[char]!);
+    const field = (name: string, value?: string | number) => value == null || value === "" ? "" :
+      `<${name}>${escape(value)}</${name}>`;
+    const decimal = (amount: number) => (amount / 100).toFixed(2);
+    const destination = field("CPF", contact?.cpf?.replace(/\D/g, "")) + field("xNome", sale.customer) +
+      (address ? `<enderDest>${field("xLgr", address.street)}${field("nro", address.number)}
+        ${field("xCpl", address.complement)}${field("xBairro", address.neighborhood)}
+        ${field("xMun", address.city)}${field("UF", address.state)}${field("CEP", address.postalCode?.replace(/\D/g, ""))}
+      </enderDest>` : "") + field("email", contact?.email);
+    const details = items.map((item, index) =>
+      `<det nItem="${index + 1}"><prod>${field("cProd", item.sku)}${field("xProd", item.productName)}
+        ${field("qCom", item.quantity)}${field("vUnCom", decimal(item.unitPrice))}
+        ${field("vProd", decimal(item.quantity * item.unitPrice))}</prod></det>`).join("\n");
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- Prévia sem valor fiscal. Complete os dados fiscais no emissor. Sem assinatura ou protocolo. -->
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe versao="4.00">
+  <ide><mod>55</mod></ide>
+  <dest>${destination}</dest>
+  ${details}
+  <total><ICMSTot>${field("vProd", decimal(items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)))}
+    ${field("vDesc", decimal(sale.discount))}${field("vNF", decimal(sale.total))}</ICMSTot></total>
+  ${sale.fiscalNotes ? `<infAdic>${field("infCpl", sale.fiscalNotes)}</infAdic>` : ""}
+</infNFe></NFe>`;
+    return new Response(xml, { headers: {
+      "Content-Type": "application/xml; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="previa-nfe-muvi-e.xml"',
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+    } });
+  }
+  const doc = new PDFDocument({ size: "A4", margin: 36 });
   const chunks: Buffer[] = [];
   const pdf = new Promise<Buffer>((resolve, reject) => {
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -29,13 +62,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .text("PRÉVIA PARA EMISSÃO | SEM VALOR FISCAL. Dados para conferência e preenchimento no emissor fiscal.");
   doc.moveDown(1.5);
   const section = (title: string, rows: Array<[string, string]>) => {
+    const x = doc.page.margins.left;
+    const width = doc.page.width - x - doc.page.margins.right;
     if (doc.y > doc.page.height - doc.page.margins.bottom - 90) doc.addPage();
-    doc.font("Helvetica-Bold").fontSize(12).fillColor("#5E4500").text(title).moveDown(0.35);
+    doc.rect(x, doc.y, width, 19).fillAndStroke("#eeeeee", "#555555");
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#151613").text(title.toUpperCase(), x + 6, doc.y + 5, { width: width - 12 });
+    doc.y += 4;
     for (const [label, value] of rows) {
-      doc.font("Helvetica-Bold").fontSize(10).fillColor("#151613").text(label);
-      doc.font("Helvetica").text(value).moveDown(0.45);
+      doc.font("Helvetica").fontSize(10);
+      const height = doc.heightOfString(value, { width: width - 12 }) + 25;
+      if (doc.y + height > doc.page.height - doc.page.margins.bottom) doc.addPage();
+      const y = doc.y;
+      doc.rect(x, y, width, height).stroke("#555555");
+      doc.font("Helvetica-Bold").fontSize(8).text(label.toUpperCase(), x + 6, y + 4, { width: width - 12 });
+      doc.font("Helvetica").fontSize(10).text(value, x + 6, y + 15, { width: width - 12 });
+      doc.y = y + height;
     }
-    doc.moveDown(0.5);
+    doc.x = x;
+    doc.moveDown(0.75);
   };
 
   section("01  Operação e emitente", [
