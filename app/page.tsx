@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { stores } from "@/domain/retail";
 import { Icon, instagram } from "./brand";
-import { ModelCard, readCatalog, SiteFooter, SiteHeader } from "./catalog";
+import { CatalogEmpty, ModelCard, readCatalog, SiteFooter, SiteHeader } from "./catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +26,10 @@ export default async function Home() {
       <div className="signal-bar"><div className="site-wrap"><span><Icon name="bolt" size={19} /> Mobilidade elétrica</span><span><Icon name="pin" size={19} /> São José</span><span><Icon name="pin" size={19} /> Palhoça</span></div></div>
       <section id="modelos" className="site-wrap site-section">
         <div className="section-heading"><div><p className="eyebrow">01 / CATÁLOGO</p><h2>Encontre sua próxima scooter.</h2></div><p>Veja os modelos cadastrados e fale com a equipe para confirmar a disponibilidade na sua loja.</p></div>
+        {products.length ? <>
         <div className="catalog-grid">{products.slice(0, 3).map((product) => <ModelCard key={product.id} product={product} />)}</div>
         <Link className="button outline catalog-more" href="/modelos">Ver todos os modelos <Icon name="arrow" size={17} /></Link>
+        </> : <CatalogEmpty />}
       </section>
       <section className="site-wrap site-section customer-stories" id="relatos">
         <div className="section-heading"><div><p className="eyebrow">QUEM JÁ ESCOLHEU A MUVI-E</p><h2>Relatos de clientes.</h2></div>
