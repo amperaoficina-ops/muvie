@@ -62,6 +62,26 @@ export function Rankings({ state, filter, period, admin }: { state: RetailState;
         <div key={row.label}><dt>{row.label}</dt><dd>{money(row.margin)}</dd></div>)}</dl>
       <p className="admin-empty">Receita menos custo, taxas de cartão, impostos, comissão e brindes rateados pelo valor dos itens vendidos. Considera vendas com custo completo.</p>
     </section>}
+    {report && <section className="panel">
+      <div className="panel-title"><h2>Lucro e caixa por loja</h2></div>
+      <div className="table-wrap"><table><thead><tr>
+        <th scope="col">Unidade</th><th scope="col">Lucro líquido no período</th>
+        <th scope="col">Movimento de caixa no período</th><th scope="col">Caixa acumulado até {period.to.split("-").reverse().join("/")}</th>
+      </tr></thead><tbody>
+        {(filter ? storeList(state).filter((store) => store.id === filter) : storeList(state)).map((store) => {
+          const unit = financialReport(state, period.from, period.to, store.id);
+          const accumulated = financialReport(state, "0000-01-01", period.to, store.id);
+          return <tr key={store.id}><th scope="row">{storeName(store.id, state)}</th>
+            <td><strong>{money(unit.result)}</strong>{unit.missingSales > 0 && <small>Parcial · {unit.missingSales} sem custo completo</small>}</td>
+            <td>{money(unit.cash)}</td><td><strong>{money(accumulated.cash)}</strong></td></tr>;
+        })}
+        {!filter && <tr><th scope="row">Todas as lojas</th>
+          <td><strong>{money(report.result)}</strong>{report.missingSales > 0 && <small>Parcial · {report.missingSales} sem custo completo</small>}</td>
+          <td>{money(report.cash)}</td><td><strong>{money(financialReport(state, "0000-01-01", period.to).cash)}</strong></td>
+        </tr>}
+      </tbody></table></div>
+      <p className="admin-empty">O lucro segue o DRE gerencial. O caixa usa os recebimentos, pagamentos e estornos registrados.</p>
+    </section>}
     {report && <div className="metrics-grid">
       <Metric name="Custos e despesas do período" value={report.cost + report.cardFees + report.taxes + report.commissions + report.fixed + report.salary + report.expenses} />
       <Metric name="A pagar em aberto" value={report.payable} />

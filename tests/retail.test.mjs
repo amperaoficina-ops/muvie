@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, settleEntry, normalizeCpf, recordPurchase, recordSale, stockComposition, transferStock } from "../domain/retail.ts";
+import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, stockComposition, transferStock } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -174,6 +174,8 @@ test("venda combinada contabiliza taxa e brinde, baixa parcial e devolve o estoq
   assert.equal(state.sales.length, 1);
   assert.equal(state.sales[0].cost, 315000);
   assert.equal(state.sales[0].cardFees, 25000);
+  assert.equal(saleNetProfit(state.sales[0]), 259900);
+  assert.equal(saleNetProfit({ ...state.sales[0], missingCostUnits: 1 }), null);
   const card = state.ledger.find((entry) => entry.cardFee);
   settleEntry(state, card.id, { id: "partial", amount: 200000, date: "2026-11-08" });
   const report = financialReport(state, "2026-11-07", "2026-11-08");

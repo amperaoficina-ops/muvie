@@ -162,6 +162,11 @@ export function postMonthlyCosts(state: RetailState, store: StoreId, month: stri
   }
 }
 
+export function saleNetProfit(sale: Sale) {
+  if (sale.canceledAt || sale.cost == null || sale.missingCostUnits) return null;
+  return sale.total - sale.cost - (sale.cardFees ?? 0) - (sale.tax?.amount ?? 0) - (sale.commission ?? 0);
+}
+
 export function financialReport(state: RetailState, from: string, to: string, store?: StoreId) {
   const includes = (date: string) => date >= from && date <= to;
   const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, taxes: 0, fixed: 0, salary: 0, expenses: 0, other: 0, incoming: 0, outgoing: 0,

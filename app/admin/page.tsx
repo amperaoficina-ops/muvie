@@ -13,7 +13,7 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, money, productCategories, stages, stockComposition, storeName, storeList,
+  balanceDue, money, saleNetProfit, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
 import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts } from "./actions";
@@ -367,6 +367,7 @@ function saleStatus(sale: Sale, state: RetailState) {
 function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, detailFeedback, canEditCosts = false, showCost = false }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[] | null; focus?: string; detailFeedback?: { message: string; error: boolean }; canEditCosts?: boolean; showCost?: boolean }) {
   return <Table headers={["Venda", "Unidade", "Total", "Recebimento", ...(canCancel ? ["Nota fiscal", "Ação"] : [])]}>{sales.map((sale) => {
     const status = saleStatus(sale, state);
+    const netProfit = saleNetProfit(sale);
     const receivables = state.ledger.filter((entry) => entry.saleId === sale.id && entry.kind === "venda" && !entry.canceled);
     const outstanding = receivables.reduce((total, entry) => total + balanceDue(entry), 0);
     const received = receivables.reduce((total, entry) => total + entry.amount - balanceDue(entry), 0);
@@ -409,6 +410,10 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
                 <div><dt>Comissão</dt><dd>{money(sale.commission ?? 0)}</dd></div>
               </>}
             </dl>
+            {showCost && !sale.canceledAt && <div className="sale-payment-totals"><div>
+              <dl><dt>Lucro líquido da venda</dt><dd>{netProfit == null ? "Custo pendente" : money(netProfit)}</dd></dl>
+              <p>Desconta custos dos itens e brindes, taxas, impostos e comissão.</p>
+            </div></div>}
           </section>
           <SaleDocuments sale={sale} filter={filter} invoices={invoices ?? []} />
           {canEditCosts && !sale.canceledAt && <details className="sale-detail-card sale-documents"><summary>Editar custos</summary>
