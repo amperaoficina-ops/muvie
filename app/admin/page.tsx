@@ -149,12 +149,8 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
   state: RetailState; filter: Filter; detailed?: boolean; showPurchases?: boolean;
 }) {
   const { lots, cost } = stockComposition(state, filter);
-  const vehicles = stockComposition(state, filter, true);
-  const bikes = new Set(state.products.filter((product) => product.category === "Bicicleta elétrica").map((product) => product.id));
-  const bikeCount = lots.reduce((total, lot) => total + (bikes.has(lot.productId) ? lot.quantity : 0), 0);
-  const bikeTotal = state.products.filter((product) => bikes.has(product.id)).reduce((sum, product) =>
-    sum + storeList(state).filter((unit) => !filter || unit.id === filter).reduce((total, unit) => total + (product.stock[unit.id] ?? 0), 0), 0);
-  const percent = (quantity: number, total = vehicles.total) => total ? quantity / total * 100 : 0;
+  const scooters = stockComposition({ ...state, products: state.products.filter((item) => item.category === "Scooter elétrica") }, filter);
+  const percent = (quantity: number) => scooters.total ? quantity / scooters.total * 100 : 0;
   const format = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
   return <section className="panel">
     <div className="panel-title"><h2>Consignação no estoque atual</h2>
@@ -163,13 +159,12 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
     </div>
     <dl className="finance-rows">
       <div><dt>Valor total consignado a custo de repasse</dt><dd>{money(cost)}</dd></div>
-      <div><dt>Bicicletas e scooters consignadas</dt><dd>{vehicles.consigned} de {vehicles.total} ({bikeCount} bicicleta(s))</dd></div>
+      <div><dt>Scooters consignadas</dt><dd>{scooters.consigned} de {scooters.total}</dd></div>
     </dl>
     <div className="consignment-chart">
-      {vehicles.total > 0 && <div className="consignment-bar" aria-hidden="true"><span style={{ width: percent(vehicles.consigned) + "%" }} /></div>}
-      <p>Consignadas <strong>{format.format(percent(vehicles.consigned))}%</strong> · Próprias ou sem lote <strong>{format.format(percent(vehicles.owned))}%</strong></p>
-      {bikeTotal > 0 && <><div className="consignment-bar" aria-hidden="true"><span style={{ width: percent(bikeCount, bikeTotal) + "%" }} /></div>
-        <p>Só bicicletas · <strong>{format.format(percent(bikeCount, bikeTotal))}%</strong> consignadas · <strong>{format.format(percent(bikeTotal - bikeCount, bikeTotal))}%</strong> próprias ou sem lote</p></>}
+      {scooters.total > 0 && <div className="consignment-bar" aria-hidden="true"><span style={{ width: percent(scooters.consigned) + "%" }} /></div>}
+      <p>Consignadas <strong>{format.format(percent(scooters.consigned))}%</strong> · Próprias ou sem lote <strong>{format.format(percent(scooters.owned))}%</strong></p>
+
     </div>
     {detailed && (lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse", "Ação"]}>
       {lots.map((lot) => <tr key={lot.purchaseId + lot.store}>
