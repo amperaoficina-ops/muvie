@@ -288,11 +288,18 @@ function purchaseStatus(state: RetailState, id: string, condition?: string) {
   return "Histórico sem classificação";
 }
 
-function Stock({ state, filter, category, showPurchases }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean }) {
+function Stock({ state, filter, category, showPurchases, movementPage }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; movementPage?: string }) {
   const products = state.products.filter((product) => !category || product.category === category);
   const ids = new Set(products.map((product) => product.id));
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
   const movements = state.movements.filter((movement) => (!category || ids.has(movement.productId)) && (!filter || movement.store === filter));
+  const pageSize = 15;
+  const pageCount = Math.max(1, Math.ceil(movements.length / pageSize));
+  const requestedPage = Number(movementPage);
+  const page = Number.isSafeInteger(requestedPage) ? Math.min(pageCount, Math.max(1, requestedPage)) : 1;
+  const start = (page - 1) * pageSize;
+  const historyUrl = (number: number) => adminUrl("estoque", filter) + "&" +
+    new URLSearchParams({ ...(category ? { categoria: category } : {}), movimentosPagina: String(number) }) + "#movimentacoes-estoque";
   const lots = state.stockLots.filter((item) => item.quantity > 0 && (!category || ids.has(item.productId)) && (!filter || item.store === filter));
   return <>
     <nav className="stock-category-filter" aria-label="Categoria de estoque">
@@ -333,7 +340,14 @@ function Stock({ state, filter, category, showPurchases }: { state: RetailState;
       <p className="admin-empty">Para vender unidades antigas sem lote, registre a compra em Compras e marque a opção de vincular ao saldo já existente.</p>
     </section>
     <section id="movimentacoes-estoque" className="panel"><div className="panel-title"><h2>Histórico de movimentações</h2></div>
-      {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store, state)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
+      {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.slice(start, start + pageSize).map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store, state)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
+      {pageCount > 1 && <nav className="panel-title" aria-label="Páginas do histórico de movimentações">
+        <span>Página {page} de {pageCount} · {start + 1}–{Math.min(start + pageSize, movements.length)} de {movements.length}</span>
+        <div className="workspace-section-links">
+          {page > 1 && <Link href={historyUrl(page - 1)}>Anterior</Link>}
+          {page < pageCount && <Link href={historyUrl(page + 1)}>Próxima</Link>}
+        </div>
+      </nav>}
     </section>
   </>;
 }
@@ -588,7 +602,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; etapa?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; movimentosPagina?: string; etapa?: string; inicio?: string; fim?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -682,7 +696,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <nav aria-label="Seções do estoque" className="workspace-section-links">
               <a href="#lotes-estoque">Lotes em estoque</a><a href="#movimentacoes-estoque">Movimentações</a>
             </nav>
-            <Stock state={state} filter={filter} category={category} showPurchases={showPurchases} />
+            <Stock movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />
           </>}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
