@@ -492,3 +492,6 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 .admin-filter-bar .unit-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .8rem; }
 .crm-filter-bar .unit-filter { margin-inline-start: auto; }
 @media (max-width: 560px) { .crm-filter-bar .unit-filter { margin-inline-start: 0; } }
+
+.admin-record-search { align-items: center; }
+.admin-record-search input[type="search"] { flex: 1 1 220px; width: auto; max-width: 420px; }

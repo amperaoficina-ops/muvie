@@ -7,7 +7,7 @@ import { AccessFields } from "./access-fields";
 export function CardSettings({ state }: { state: RetailState }) {
   return <div className="operation-grid">
     <section className="panel"><div className="panel-title"><h2>Condições cadastradas</h2></div>
-      {state.cardRates.length ? <div className="editable-list">{state.cardRates.map((rate) => <details key={rate.id}>
+      {state.cardRates.length ? <div className="editable-list">{state.cardRates.map((rate) => <details name="card-rate" key={rate.id}>
         <summary><span><strong>{rate.name}</strong><small>{rate.mode} · {rate.installments}×</small></span><strong>{(rate.basisPoints / 100).toLocaleString("pt-BR")}%</strong></summary>
         <RateForm rate={rate} />
       </details>)}</div> : <p className="admin-empty">Cadastre uma condição para cada bandeira ou faixa de parcelas que você quiser simular.</p>}
@@ -53,7 +53,7 @@ export function UsersPanel({ users, actor }: { users: TeamAccount[]; actor: Team
     <section className="panel"><div className="panel-title"><h2>Equipe da loja</h2></div>
       <div className="editable-list">{users.map((user) => {
         const protectedAccount = isPrimaryAdmin(user) || user.email === actor.email || (user.role === "admin" && !primary);
-        return <details key={user.email}>
+        return <details name="account" key={user.email}>
           <summary><span><strong>{user.name}</strong><small>{user.email} · {roles[user.role ?? "admin"]} · {user.disabled ? "Inativo" : "Ativo"}</small></span>
             <span className="pill">{protectedAccount ? "Protegido" : Array.isArray(user.permissions) ? "Personalizado" : "Padrão do cargo"}</span></summary>
           {protectedAccount ? <p className="admin-empty">O acesso desta conta fica protegido nesta sessão.</p> :

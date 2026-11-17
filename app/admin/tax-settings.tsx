@@ -17,7 +17,7 @@ export function TaxSettings({ rates }: { rates: TaxRate[] }) {
   return <div className="operation-grid">
     <section className="panel"><div className="panel-title"><h2>Impostos cadastrados</h2></div>
       <p className="admin-empty">A alíquota incide sobre o total após descontos. Cada venda guarda o imposto calculado no momento do registro.</p>
-      {rates.length > 0 && <div className="editable-list">{rates.map((rate) => <details key={rate.id}>
+      {rates.length > 0 && <div className="editable-list">{rates.map((rate) => <details name="tax-rate" key={rate.id}>
         <summary><span><strong>{rate.name}</strong><small>{(rate.basisPoints / 100).toLocaleString("pt-BR")}%</small></span>
           {rate.defaultForSale && <span className="pill">Padrão de venda</span>}</summary>
         <TaxForm rate={rate} />

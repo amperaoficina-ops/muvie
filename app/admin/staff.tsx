@@ -21,14 +21,14 @@ export function StaffPanel({ state, filter }: { state: RetailState; filter: stri
           const records = advances.filter((item) => item.staffId === employee.id && (!filter || item.store === filter));
           const monthAdvances = records.filter((item) => item.date.startsWith(month));
           return <tr key={employee.id}>
-            <td><details><summary><strong>{employee.name}</strong></summary>
+            <td><details name="staff-record"><summary><strong>{employee.name}</strong></summary>
               <StoreItemForm kind="staff" item={employee} store={employee.store} staffPage />
             </details><small>{employee.job}{employee.active ? "" : " · Inativo"}</small></td>
             <td>{storeName(employee.store, state)}</td><td>{money(employee.salary)}</td>
             <td>{(employee.commissionBps / 100).toLocaleString("pt-BR")}%<small>{money(sold.reduce((sum, sale) => sum + (sale.commission ?? 0), 0))} no mês</small></td>
             <td>{money(sold.reduce((sum, sale) => sum + sale.total, 0))}<small>{sold.length} venda(s)</small></td>
             <td>{money(monthAdvances.reduce((sum, item) => sum + item.amount, 0))}
-              {records.length > 0 && <details><summary>Ver histórico</summary>
+              {records.length > 0 && <details name="staff-record"><summary>Ver histórico</summary>
                 <ul>{records.map((item) => <li key={item.id}>{item.date.split("-").reverse().join("/")} · {money(item.amount)}{item.notes && " · " + item.notes}</li>)}</ul>
               </details>}
             </td>

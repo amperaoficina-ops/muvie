@@ -134,11 +134,11 @@ type StoreItem = Staff | FixedCost | Asset;
 type StoreKind = "staff" | "fixed" | "asset";
 function StoreSection({ title, kind, store, items, state }: { state: RetailState; title: string; kind: StoreKind; store: StoreId; items: StoreItem[] }) {
   return <section className="panel"><div className="panel-title"><h2>{title} · {storeName(store, state)}</h2></div>
-    <div className="editable-list">{items.map((item) => <details key={item.id}><summary><span><strong>{item.name}</strong>
+    <div className="editable-list">{items.map((item) => <details name={`store-${store}-${kind}`} key={item.id}><summary><span><strong>{item.name}</strong>
       <small>{"job" in item ? item.job + " · " + money(item.salary) + " · " + (item.commissionBps / 100) + "% de comissão"
         : "quantity" in item ? item.quantity + " un. · " + money(item.amount) : money(item.amount) + " / mês · dia " + item.day}
       {"active" in item && !item.active && " · Inativo"}</small></span></summary><StoreItemForm kind={kind} store={store} item={item} /></details>)}
-      <details><summary><span>＋ Adicionar cadastro</span></summary><StoreItemForm kind={kind} store={store} /></details>
+      <details name={`store-${store}-${kind}`}><summary><span>＋ Adicionar cadastro</span></summary><StoreItemForm kind={kind} store={store} /></details>
     </div>
   </section>;
 }
@@ -219,7 +219,7 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
 
 function LedgerList({ title, entries, filter, period, state }: { state: RetailState; title: string; entries: LedgerEntry[]; filter: Filter; period: Period }) {
   return <section className="panel"><div className="panel-title"><h2>{title}</h2></div>
-    <div className="editable-list">{entries.length ? entries.map((entry) => <details key={entry.id}>
+    <div className="editable-list">{entries.length ? entries.map((entry) => <details name={title} key={entry.id}>
       <summary><span><strong>{entry.name}</strong><small>{storeName(entry.store, state)} · {labels[entry.kind]} · vence {shortDate(entry.due)}</small></span>
         <span className="pill">{entry.canceled ? "Cancelado" : balanceDue(entry) ? (entry.direction === "in" ? "A receber" : "A pagar") : "Baixado"}</span>
         <strong>{money(balanceDue(entry) || entry.amount)}</strong></summary>
@@ -229,7 +229,7 @@ function LedgerList({ title, entries, filter, period, state }: { state: RetailSt
       </>}
       {entry.settlements.map((payment) => <div className="record-actions" key={payment.id}>
         <p>Baixa de {money(payment.amount)} em {shortDate(payment.date)}{payment.reversedOn ? " · Estornada em " + shortDate(payment.reversedOn) : ""}</p>
-        {!entry.canceled && (entry.kind !== "ajuste" || entry.manual) && !payment.reversedOn && <details><summary>Registrar estorno da baixa</summary>
+        {!entry.canceled && (entry.kind !== "ajuste" || entry.manual) && !payment.reversedOn && <details name={"settlements-" + entry.id}><summary>Registrar estorno da baixa</summary>
           <LedgerForm entry={entry} filter={filter} period={period} mode="reverse" settlementId={payment.id} />
         </details>}
       </div>)}
