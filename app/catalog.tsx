@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { money, stores, type Product } from "@/domain/retail";
+import { money, stores, productColorAvailability, type Product } from "@/domain/retail";
 import { readRetail } from "@/lib/retail-store";
 import { Brand, Icon, instagram } from "./brand";
 import { ModelDetails } from "./model-details";
@@ -8,7 +8,7 @@ import { ModelDetails } from "./model-details";
 export async function readCatalog() {
   const state = await readRetail().catch(() => null);
   const products = state?.products.filter((item) => item.published && ["Scooter elétrica", "Bicicleta elétrica"].includes(item.category)) ?? [];
-  return { products, testimonials: state?.testimonials ?? [] };
+  return { products: products.map((product) => ({ ...product, publicColors: productColorAvailability(product, state?.stockLots ?? []) })), testimonials: state?.testimonials ?? [] };
 }
 
 export function SiteHeader() {
@@ -56,7 +56,7 @@ export function CatalogEmpty() {
   </div>;
 }
 
-export function ModelCard({ product }: { product: Product }) {
+export function ModelCard({ product, colors = [] }: { product: Product; colors?: ReturnType<typeof productColorAvailability> }) {
   const demo = product.sku.startsWith("DEMO-");
   return <article className="catalog-card">
     <div className="catalog-picture model-picture">
@@ -66,7 +66,10 @@ export function ModelCard({ product }: { product: Product }) {
       <p className="eyebrow">{demo ? "MODELO DEMONSTRATIVO" : product.category}</p><h3>{product.name}</h3>
       {product.description && <p>{product.description}</p>}
       <strong>{product.price && !demo ? money(product.price) : "Preço sob consulta"}</strong>
-      <ModelDetails name={product.name} imageUrl={product.imageUrl} specs={product.specs} />
+      {colors.length > 0 && <ul className="catalog-colors" aria-label="Disponibilidade por cor">
+        {colors.map(({ color, available }) => <li key={color}>{color} <small>{available ? "Em estoque" : "Sem estoque"}</small></li>)}
+      </ul>}
+      <ModelDetails name={product.name} imageUrl={product.imageUrl} specs={product.specs} colors={colors} />
     </div>
   </article>;
 }

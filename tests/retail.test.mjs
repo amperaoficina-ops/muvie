@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, sellTradeInAsset, recordPurchase, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, productColorAvailability, sellTradeInAsset, recordPurchase, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -315,4 +315,20 @@ test("recorrência mensal ajusta dias inexistentes, respeita duração e não du
   template.recurrence = { due: "2026-01-31", endedOn: "2026-03-10" };
   materializeCommitments(state, "2026-05-01");
   assert.equal(state.ledger.length, 3);
+});
+
+test("cor acompanha lote transferido, venda, disponibilidade e devolução ao estoque", () => {
+  const state = fixture();
+  state.products[0].colors = ["Carbono", "Verde militar"];
+  recordPurchase(state, { id: "carbono", productId: "scooter", store: "sao-jose", unitCost: 300000,
+    supplier: "Fornecedor", date: "2026-11-07", createdAt: date, quantity: 1, color: "Carbono" });
+  transferStock(state, "scooter", "sao-jose", "palhoca", 1, "transf", date, "carbono");
+  assert.equal(state.stockLots.find((lot) => lot.store === "palhoca").color, "Carbono");
+  recordCheckout(state, { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "carbono" }],
+    payments: [{ method: "Pix", amount: 589900, received: true, due: "" }] });
+  const availability = () => productColorAvailability(state.products[0], state.stockLots).map((item) => item.available);
+  assert.deepEqual(availability(), [false, false]);
+  assert.equal(state.sales[0].lines[0].color, "Carbono");
+  cancelSale(state, input.id, date, true);
+  assert.deepEqual(availability(), [true, false]);
 });

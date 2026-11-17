@@ -1,12 +1,13 @@
 "use server";
 
+import { productColors } from "@/domain/product-colors";
 import { parseReais } from "@/domain/money-input";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost,
-  postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
+  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColor,
+  postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
@@ -120,6 +121,17 @@ function editWithAudit(user: User, action: string, edit: (state: RetailState) =>
   });
 }
 
+function readLotColor(form: FormData) {
+  const color = choice(form, "lotColor", ["none", ...productColors]);
+  return color === "none" ? undefined : color;
+}
+
+export async function savePurchaseColor(form: FormData) {
+  await commit(form, "compras", "Cor do lote atualizada.", (state) => {
+    setPurchaseLotColor(state, value(form, "focus", 36), readLotColor(form));
+  });
+}
+
 export async function saveProduct(form: FormData) {
   const newId = randomUUID();
   await runAction(form, "produtos", "Produto salvo.", async (user) => {
@@ -135,7 +147,8 @@ export async function saveProduct(form: FormData) {
     const category = choice(form, "category", productCategories);
     const fields = {
       sku, name: value(form, "name", 100), category,
-      specs: category === scooterCategory ? readScooterSpecs(form) : null,
+      colors: productColors.filter((color) => form.getAll("productColor").includes(color)),
+      specs: category === scooterCategory ? { ...readScooterSpecs(form), ...(current?.specs?.colors ? { colors: current.specs.colors } : {}) } : null,
       price: amount(form, "price"),
       purchaseCost: current?.purchaseCost ?? null,
       description: value(form, "description", 350, false),
@@ -287,8 +300,14 @@ export async function updateStock(form: FormData) {
     const product = value(form, "productId");
     const store = choice(form, "store", storeIds(state));
     const quantity = units(form);
-    if (mode === "transferencia") transferStock(state, product, store, choice(form, "destination", storeIds(state)), quantity, id, date);
-    else changeStock(state, product, store, -quantity, value(form, "reason", 100), id, date);
+    const origin = value(form, "stockOrigin", 140, false);
+    if (mode === "transferencia") {
+      transferStock(state, product, store, choice(form, "destination", storeIds(state)), quantity, id, date, origin || undefined);
+    } else {
+      const lot = origin ? stockLotForMovement(state, product, store, origin, quantity) : undefined;
+      changeStock(state, product, store, -quantity, value(form, "reason", 100), id, date, lot?.purchaseId);
+      if (lot) lot.quantity -= quantity;
+    }
   });
 }
 
@@ -369,6 +388,7 @@ export async function savePurchase(form: FormData) {
       const date = value(form, "date", 10);
       if (!isCalendarDate(date) || date > localToday()) throw new RetailError("Informe uma data de compra válida, até hoje.");
       if (state.purchases.some((purchase) => purchase.id === id)) return;
+      const color = readLotColor(form);
       let productId = value(form, "productId");
       if (productId === "new") {
         if (!canAccess(user, "produtos")) throw new RetailError("Sua conta não tem acesso ao cadastro de produtos.");
@@ -378,7 +398,7 @@ export async function savePurchase(form: FormData) {
         const category = choice(form, "category", productCategories);
         productId = randomUUID();
         state.products.push({
-          id: productId, sku, name: value(form, "name", 100), category, price: amount(form, "price"),
+          id: productId, colors: color ? [color] : [], sku, name: value(form, "name", 100), category, price: amount(form, "price"),
           specs: category === scooterCategory ? readScooterSpecs(form) : null,
           description: "", imageUrl: "", published: false, stock: {},
         });
@@ -391,7 +411,7 @@ export async function savePurchase(form: FormData) {
       if (supplierChoice && !supplier) throw new RetailError("Selecione um fornecedor cadastrado.");
       const product = state.products.find((item) => item.id === productId);
       recordPurchase(state, {
-        id, date, createdAt, openingBalance: form.get("openingBalance") === "on", store: choice(form, "store", storeIds(state)), productId,
+        id, date, color, createdAt, openingBalance: form.get("openingBalance") === "on", store: choice(form, "store", storeIds(state)), productId,
         ...(product?.category === scooterCategory && { specs: readScooterSpecs(form) }),
         supplier: supplier?.name ?? "", supplierId: supplier?.id, contactId: value(form, "contactId", 36, false),
         quantity: units(form), unitCost: amount(form, "unitCost"),

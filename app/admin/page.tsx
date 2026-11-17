@@ -1,3 +1,4 @@
+import { LotColorField, ProductColorsField } from "./product-color-fields";
 import { ModelCard } from "../catalog";
 import { SupplierField } from "./supplier-field";
 import { SearchSelect } from "./search-select";
@@ -16,10 +17,10 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, isCalendarDate, money, saleNetProfit, tradeInAssets, productCategories, stages, stockComposition, storeName, storeList,
+  balanceDue, isCalendarDate, money, saleNetProfit, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem } from "./actions";
+import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -89,10 +90,6 @@ function FilterInput({ filter }: { filter: Filter }) {
 
 function StoreField({ filter, units, label = "Unidade" }: { filter: Filter; units: readonly Store[]; label?: string }) {
   return <label>{label}<select name="store" defaultValue={filter} required><option value="" disabled>Selecione a unidade</option>{units.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>;
-}
-
-function ProductField({ products }: { products: Product[] }) {
-  return <label>Produto<SearchSelect name="productId" defaultValue="" required><option value="" disabled>Selecione um produto</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</SearchSelect></label>;
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
@@ -170,10 +167,10 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
       <p>Consignadas <strong>{format.format(percent(scooters.consigned))}%</strong> · Próprias ou sem lote <strong>{format.format(percent(scooters.owned))}%</strong></p>
 
     </div>
-    {detailed && (lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse", "Ação"]}>
+    {detailed && (lots.length ? <Table headers={["Produto", "Cor", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse", "Ação"]}>
       {lots.map((lot) => <tr key={lot.purchaseId + lot.store}>
         <td>{state.products.find((product) => product.id === lot.productId)?.name ?? lot.productId}</td>
-        <td>{storeName(lot.store, state)}</td><td>{lot.supplier}</td><td>{calendarLabel(lot.date)}</td>
+        <td>{lot.color ?? "Sem cor definida"}</td><td>{storeName(lot.store, state)}</td><td>{lot.supplier}</td><td>{calendarLabel(lot.date)}</td>
         <td>{lot.quantity} un.</td><td>{money(lot.quantity * lot.unitCost)}</td>
         <td><DetailsDialog id={"devolucao-" + lot.purchaseId + "-" + lot.store} title="Estornar consignado" trigger="Estornar">
           <form className="admin-form" action={returnConsignment}>
@@ -200,12 +197,13 @@ function CatalogSettings({ state, showProducts }: { state: RetailState; showProd
     {vehicles.length ? <Table headers={["Modelo", "Publicação", "Dados a completar", "Ações"]}>
       {vehicles.map((product) => {
         const missing = [
+          ...(!productColorAvailability(product, state.stockLots).length ? ["Cores"] : []),
           ...(!product.imageUrl ? ["Foto"] : []), ...(!product.description?.trim() ? ["Descrição"] : []),
           ...(!product.price || product.sku.startsWith("DEMO-") ? ["Preço de venda"] : []),
-          ...scooterFields.filter(({ key }) => !product.specs?.[key]?.trim()).map(({ label }) => label),
+          ...scooterFields.filter(({ key }) => key !== "colors" && !product.specs?.[key]?.trim()).map(({ label }) => label),
         ];
         return <tr key={product.id}>
-          <td><strong>{product.name}</strong><small>{product.sku}</small></td>
+          <td><strong>{product.name}</strong><small>{product.sku}</small>{product.colors?.length ? <small>{product.colors.join(" · ")}</small> : null}</td>
           <td><span className={"pill " + (product.published ? "green" : "")}>{product.published ? "Publicado" : "Oculto"}</span></td>
           <td><div className="inventory-tags">
             {missing.length ? missing.map((label) => <span className="pill" key={label}>{label}</span>) : <span className="pill green">Dados completos</span>}
@@ -213,7 +211,7 @@ function CatalogSettings({ state, showProducts }: { state: RetailState; showProd
           <td><div className="sale-statuses">
             <DetailsDialog id={"preview-" + product.id} title="Prévia no catálogo" trigger="Ver prévia">
               <div className="sale-detail-content">
-                <div className="site" style={{ width: "100%", maxWidth: 430, marginInline: "auto" }}><ModelCard product={product} /></div>
+                <div className="site" style={{ width: "100%", maxWidth: 430, marginInline: "auto" }}><ModelCard product={product} colors={productColorAvailability(product, state.stockLots)} /></div>
               </div>
             </DetailsDialog>
             <form action={savePublication}>
@@ -236,6 +234,7 @@ function ProductForm({ filter, product }: { filter: Filter; product?: Product })
     <label>Nome<input name="name" required maxLength={100} defaultValue={product?.name} placeholder="Nome comercial" /></label>
     <label>SKU<input name="sku" required maxLength={40} defaultValue={product?.sku} placeholder="Código do produto" /></label>
     </ProductCategoryFields>
+    <ProductColorsField initial={product?.colors} />
     <label>Preço de venda (R$)<input name="price" inputMode="decimal" maxLength={32} defaultValue={product ? (product.price / 100).toFixed(2).replace(".", ",") : ""} placeholder="0,00" /></label>
     {product?.imageUrl && <div className="product-photo-preview span-two">
       <Image src={product.imageUrl} alt={product.name} width={96} height={72} unoptimized />
@@ -309,10 +308,10 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
         <CategoryFilters tab="compras" filter={filter} category={category} query={query} />
         <RecordSearch key={filter + ":" + (category ?? "")} tab="compras" store={filter} category={category} query={query} />
       </div>
-      {purchases.length ? <Table headers={["Categoria", "Produto", "Data", "Unidade", "Fornecedor", "Condição", "Total", "Ação"]}>{purchases.map((purchase) => (
+      {purchases.length ? <Table headers={["Categoria", "Produto", "Cor", "Data", "Unidade", "Fornecedor", "Condição", "Total", "Ação"]}>{purchases.map((purchase) => (
         <tr key={purchase.id}>
           <td>{productCategories.find((item) => item === productCategoriesById.get(purchase.productId)) ?? "—"}</td>
-          <td><strong>{purchase.productName}</strong><small>{purchase.sku}</small></td>
+          <td><strong>{purchase.productName}</strong><small>{purchase.sku}</small></td><td>{purchase.color ?? "Sem cor definida"}</td>
           <td>{calendarLabel(purchase.date)}</td><td>{storeName(purchase.store, state)}</td><td>{purchase.supplier}</td>
           <td><span className="pill">{purchaseStatus(state, purchase.id, purchase.acquisition)}</span></td>
           <td>{money(purchase.total)}</td>
@@ -349,6 +348,10 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
             </form>
           </details>}
           {purchase.canceledAt && <p className="form-note">Cancelada em {dateLabel(purchase.canceledAt)}</p>}
+          {!purchase.canceledAt && <form className="admin-form" action={savePurchaseColor}>
+            <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
+            <LotColorField initial={purchase.color} /><div><Submit>Salvar cor do lote</Submit></div>
+          </form>}
           <InvoiceBox owner="purchase" id={purchase.id} filter={filter} invoices={invoices} />
           </div></DetailsDialog></td>
         </tr>
@@ -361,6 +364,7 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
         <input type="hidden" name="purchaseId" value={purchaseId} />
         <input type="hidden" name="focus" value={purchaseId} />
         <PurchaseProductFields canCreate={canCreateProduct} initialId={product?.id} products={state.products.map(({ id, name, sku, category, specs }) => ({ id, name, sku, category, specs }))} />
+        <LotColorField />
         <StoreField units={storeList(state)} filter={filter} label="Unidade que recebe o estoque" />
         <SupplierField suppliers={state.suppliers.map(({ id, name }) => ({ id, name }))} />
         <label>Cliente vinculado (opcional)<SearchSelect name="contactId"><option value="">Sem vínculo</option>{state.contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store, state)}</option>)}</SearchSelect></label>
@@ -540,6 +544,7 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
   const movements = state.movements.filter((movement) => (!(category || query) || ids.has(movement.productId)) && (!filter || movement.store === filter));
   const lots = state.stockLots.filter((item) => item.quantity > 0 && (!(category || query) || ids.has(item.productId)) && (!filter || item.store === filter));
+  const colorsByStore = productColorStock(lots);
   const balances = stockPage(products.length, balancePage);
   const stockLots = stockPage(lots.length, lotPage);
   const history = stockPage(movements.length, movementPage);
@@ -565,8 +570,10 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
     <CreateDialog id="movimentar-estoque" title="Movimentar estoque" reopen={Boolean(error)}>
       {error && <p className="feedback error" role="alert">{error}</p>}
       {state.products.length ? <form action={updateStock} className="admin-form">
-        <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><input type="hidden" name="stockView" value={view} /><input type="hidden" name="stockSearch" value={query} /><ProductField products={state.products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
-        <StockFields units={storeList(state)} />
+        <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><input type="hidden" name="stockView" value={view} /><input type="hidden" name="stockSearch" value={query} />
+        <StockFields units={storeList(state)} initialStore={filter}
+          products={state.products.map(({ id, name, sku }) => ({ id, name, sku }))}
+          lots={state.stockLots.map(({ purchaseId, productId, store, color, quantity, supplier }) => ({ purchaseId, productId, store, color, quantity, supplier }))} />
         <div className="span-two"><Submit>Salvar operação</Submit></div>
       </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
     </CreateDialog>
@@ -574,6 +581,8 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
       {tableFilters}
       {products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{products.slice(balances.start, balances.start + stockPageSize).map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td>{columns.map((store) => <td key={store.id}>
         <strong>{product.stock[store.id] ?? 0} un.</strong>
+        {Object.entries(colorsByStore[product.id]?.[store.id] ?? {}).map(([color, quantity]) =>
+          <small key={color}>{color} · {quantity} un.</small>)}
         {(product.stock[store.id] ?? 0) > 0 && <div className="inventory-tags">
           {(() => {
             const consigned = lots.filter((lot) => lot.store === store.id && lot.productId === product.id && lot.consigned)
@@ -588,9 +597,9 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
     </section>}
     {view === "lotes" && <section id="lotes-estoque" className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
       {tableFilters}
-      {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.slice(stockLots.start, stockLots.start + stockPageSize).map((lot) => {
+      {lots.length ? <Table headers={["Produto", "Cor", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.slice(stockLots.start, stockLots.start + stockPageSize).map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
-        return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{storeName(lot.store, state)}</td>
+        return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{lot.color ?? "Sem cor definida"}</td><td>{storeName(lot.store, state)}</td>
           <td>{lot.supplier}</td><td>{lot.consigned ? "Consignado" : "Próprio"}{purchase && " · " + purchaseStatus(state, lot.purchaseId, purchase.acquisition)}</td><td>{lot.quantity} un.</td>{showPurchases && <td>{money(lot.unitCost)}{purchase && <small><Link className="back-link" href={adminUrl("compras", purchase.store) + "&ficha=" + purchase.id}>Abrir compra</Link></small>}</td>}</tr>;
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
       <StockPagination name="lotes em estoque" page={stockLots} href={(number) => pageUrl("lotesPagina", number, "lotes-estoque")} />
@@ -653,7 +662,7 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
           <section className="sale-detail-card"><h3>Itens da venda</h3>
           <Table headers={["Item", "Qtd.", "Unitário", "Total", ...(showCost ? ["Custo"] : [])]}>
             {(sale.lines ?? [sale]).map((line, index) => <tr key={index}>
-              <td>{line.productName}{"gift" in line && line.gift && " (brinde)"}</td><td>{line.quantity}</td>
+              <td>{line.productName}{"color" in line && line.color && " · " + line.color}{"gift" in line && line.gift && " (brinde)"}</td><td>{line.quantity}</td>
               <td>{money(line.unitPrice)}</td><td>{money(line.total)}</td>
               {showCost && <td>{line.cost == null || line.missingCostUnits ? "Pendente" : money(line.cost)}</td>}
             </tr>)}
@@ -891,6 +900,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const filter: Filter = storeList(state ?? undefined).find((store) => store.id === params.loja)?.id ?? "";
 
   const units = storeList(state ?? undefined);
+  const colorStock = active.id === "simulador" && state ? productColorStock(state.stockLots) : {};
   const category = productCategories.find((item) => item === params.categoria);
   const stockView = stockViews.find(({ id }) => id === params.estoqueVisao)?.id ?? "produtos";
   const stockViewQuery = active.id === "estoque" ? "&" + new URLSearchParams({ estoqueVisao: stockView }) : "";
@@ -983,9 +993,9 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "compromissos" && <Commitments view={commitmentView} paidFrom={paidFrom} paidTo={paidTo} requestedPage={params.compromissosPagina} kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} machines={state.cardMachines} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
-            lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}
+            lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost, color }) => ({ productId, store, date, quantity, unitCost, color })) : []}
             sellers={canAccess(user, "financeiro") ? state.staff.filter((seller) => seller.active).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps })) : []}
-            products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))} />}
+            products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock, colorStock: colorStock[id] }))} />}
           {active.id === "taxas" && <CardSettings canManage={user.role === "admin" || isPrimaryAdmin(user)} state={state} machineId={params.maquininha} error={params.erro} />}
           {active.id === "impostos" && <TaxSettings rates={state.taxRates ?? []} />}
           {active.id === "relatos" && <TestimonialsSettings state={state} />}

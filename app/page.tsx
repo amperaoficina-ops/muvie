@@ -27,7 +27,7 @@ export default async function Home() {
       <section id="modelos" className="site-wrap site-section">
         <div className="section-heading"><div><p className="eyebrow">01 / CATÁLOGO</p><h2>Encontre sua próxima scooter.</h2></div><p>Veja os modelos cadastrados e fale com a equipe para confirmar a disponibilidade na sua loja.</p></div>
         {products.length ? <>
-        <div className="catalog-grid">{products.slice(0, 3).map((product) => <ModelCard key={product.id} product={product} />)}</div>
+        <div className="catalog-grid">{products.slice(0, 3).map((product) => <ModelCard key={product.id} product={product} colors={product.publicColors} />)}</div>
         <Link className="button outline catalog-more" href="/modelos">Ver todos os modelos <Icon name="arrow" size={17} /></Link>
         </> : <CatalogEmpty />}
       </section>

@@ -1,5 +1,6 @@
 "use client";
 
+import { productColors } from "@/domain/product-colors";
 import { CardPaymentFields } from "./card-payment-fields";
 import { SearchSelect } from "./search-select";
 import "./simulator.css";
@@ -11,11 +12,11 @@ import { proposalQuote, type ProposalProduct } from "@/domain/proposal";
 export function Simulator({ products, rates, machines, initialStore, stores, taxRates, showFinance, lots, sellers }: {
   products: ProposalProduct[]; rates: CardRate[]; machines: CardMachine[]; initialStore: string; stores: readonly Store[];
   taxRates: TaxRate[]; showFinance: boolean;
-  lots: Pick<StockLot, "productId" | "store" | "date" | "quantity" | "unitCost">[];
+  lots: Pick<StockLot, "productId" | "store" | "date" | "quantity" | "unitCost" | "color">[];
   sellers: Pick<Staff, "id" | "name" | "store" | "commissionBps">[];
 }) {
   const [store, setStore] = useState(initialStore);
-  const [items, setItems] = useState([{ productId: "", quantity: "1" }]);
+  const [items, setItems] = useState([{ productId: "", quantity: "1", color: "" }]);
   const [payments, setPayments] = useState([{ method: "Pix", amount: "", rateId: "", machineId: "" }]);
   const [discount, setDiscount] = useState("");
   const [customer, setCustomer] = useState("");
@@ -33,35 +34,48 @@ export function Simulator({ products, rates, machines, initialStore, stores, tax
 
   const seller = sellers.find((item) => item.id === sellerId && item.store === store);
   const commission = percentageAmount(quote?.total ?? 0, seller?.commissionBps ?? 0);
-  const required = new Map<string, number>();
-  if (quote) for (const item of items) required.set(item.productId, (required.get(item.productId) ?? 0) + Number(item.quantity));
+  const availableLots = lots.filter((item) => item.store === store).sort((a, b) => a.date.localeCompare(b.date));
+  const quantities = availableLots.map((lot) => lot.quantity);
   let productCost = 0;
-  for (const lot of lots.filter((item) => item.store === store).sort((a, b) => a.date.localeCompare(b.date))) {
-    const needed = required.get(lot.productId) ?? 0;
-    const quantity = Math.min(needed, lot.quantity);
-    productCost += quantity * lot.unitCost;
-    required.set(lot.productId, needed - quantity);
+  let missingCost = false;
+  if (quote && showFinance) {
+    for (const item of [...items].sort((a, b) => Number(Boolean(b.color)) - Number(Boolean(a.color)))) {
+      let remaining = Number(item.quantity);
+      for (const [index, lot] of availableLots.entries()) {
+        if (!remaining) break;
+        if (lot.productId !== item.productId || (item.color && lot.color !== item.color)) continue;
+        const quantity = Math.min(remaining, quantities[index]);
+        quantities[index] -= quantity;
+        remaining -= quantity;
+        productCost += quantity * lot.unitCost;
+      }
+      missingCost ||= remaining > 0;
+    }
   }
-  const missingCost = [...required.values()].some((quantity) => quantity > 0);
 
   return <div className="operation-grid simulator-layout">
     <section className="panel">
       <div className="panel-title"><h2>Monte a proposta</h2></div>
       <div className="admin-form simulator-form">
-        <label>Unidade<select value={store} onChange={(event) => { setStore(event.target.value); setSellerId(""); setItems([{ productId: "", quantity: "1" }]); }}>
+        <label>Unidade<select value={store} onChange={(event) => { setStore(event.target.value); setSellerId(""); setItems([{ productId: "", quantity: "1", color: "" }]); }}>
           {stores.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
         </select></label>
         <label>Nome do cliente (opcional)<input value={customer} maxLength={100} onChange={(event) => setCustomer(event.target.value)} /></label>
         <fieldset className="address-fields span-two checkout-group"><legend>Produtos</legend>
           {items.map((item, index) => <div className="checkout-row span-two" key={index}>
-            <label>Produto <SearchSelect value={item.productId} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, productId: event.target.value } : row))}>
+            <label>Produto <SearchSelect value={item.productId} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, productId: event.target.value, color: "" } : row))}>
               <option value="">{available.length ? "Selecione um produto" : "Sem produtos disponíveis"}</option>
               {available.map((row) => <option value={row.id} key={row.id}>{row.name} · {money(row.price)} · {row.stock[store]} un.</option>)}
             </SearchSelect></label>
+            {item.productId && <label>Cor<SearchSelect value={item.color} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, color: event.target.value } : row))}>
+              <option value="">Sem preferência</option>
+              {productColors.filter((color) => (available.find((row) => row.id === item.productId)?.colorStock?.[store]?.[color] ?? 0) > 0)
+                .map((color) => <option key={color}>{color}</option>)}
+            </SearchSelect></label>}
             <label>Quantidade<input type="number" min="1" value={item.quantity} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, quantity: event.target.value } : row))} /></label>
             {items.length > 1 && <button type="button" className="button danger" onClick={() => setItems(items.filter((_, i) => i !== index))}>Remover produto</button>}
           </div>)}
-          <button type="button" className="button" disabled={items.length >= 20} onClick={() => setItems([...items, { productId: "", quantity: "1" }])}>Adicionar produto</button>
+          <button type="button" className="button" disabled={items.length >= 20} onClick={() => setItems([...items, { productId: "", quantity: "1", color: "" }])}>Adicionar produto</button>
         </fieldset>
         <label className="span-two">Desconto (R$)<input value={discount} inputMode="decimal" placeholder="0,00" onChange={(event) => setDiscount(event.target.value)} /></label>
         <fieldset className="address-fields span-two checkout-group"><legend>Pagamento</legend>
@@ -106,7 +120,7 @@ export function Simulator({ products, rates, machines, initialStore, stores, tax
         <form action="/admin/simulador/proposta" method="post">
           <input type="hidden" name="store" value={store} /><input type="hidden" name="customer" value={customer} />
           <input type="hidden" name="discount" value={discount} />
-          {items.map((item, index) => <div key={index}><input type="hidden" name="product" value={item.productId} /><input type="hidden" name="quantity" value={item.quantity} /></div>)}
+          {items.map((item, index) => <div key={index}><input type="hidden" name="product" value={item.productId} /><input type="hidden" name="quantity" value={item.quantity} /><input type="hidden" name="color" value={item.color} /></div>)}
           {payments.map((payment, index) => <div key={index}><input type="hidden" name="method" value={payment.method} /><input type="hidden" name="amount" value={amounts[index]} /><input type="hidden" name="rate" value={payment.rateId} /><input type="hidden" name="machine" value={payment.machineId} /></div>)}
           <button type="submit" className="button yellow">Baixar PDF da proposta</button>
         </form>

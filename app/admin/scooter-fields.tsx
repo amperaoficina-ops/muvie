@@ -11,7 +11,7 @@ function ScooterFields({ specs, purchase }: { specs?: ScooterSpecs | null; purch
     <p className="form-note span-two">{purchase
       ? "Os dados do produto vêm preenchidos. Os ajustes feitos aqui ficam no histórico desta compra."
       : "Preencha os dados confirmados do modelo. Os campos em branco aparecem como “A confirmar” no catálogo."}</p>
-    {scooterFields.map(({ key, label, example }) => (
+    {scooterFields.filter(({ key }) => key !== "colors").map(({ key, label, example }) => (
       <label key={key}>{label}<input name={`scooter-${key}`} defaultValue={specs?.[key]} placeholder={example} maxLength={120} /></label>
     ))}
   </fieldset>;

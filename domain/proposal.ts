@@ -1,21 +1,30 @@
 import { cardQuote, money, paymentMethods, type CardRate, type Product, type StoreId } from "./retail";
+import { type ProductColor } from "./product-colors";
 import { parseReais } from "./money-input";
 
-export type ProposalProduct = Pick<Product, "id" | "name" | "price" | "stock">;
-export type ProposalItem = { productId: string; quantity: string };
+export type ProposalProduct = Pick<Product, "id" | "name" | "price" | "stock"> & { colorStock?: Record<string, Partial<Record<ProductColor, number>>> };
+export type ProposalItem = { productId: string; quantity: string; color?: string };
 export type ProposalPayment = { method: string; amount: string; rateId: string };
 
 export function proposalQuote(products: ProposalProduct[], rates: CardRate[], store: StoreId,
   items: ProposalItem[], payments: ProposalPayment[], discountText: string) {
   const quantities = new Map<string, number>();
-  const lines = items.map(({ productId, quantity }) => {
+  const colorQuantities = new Map<string, number>();
+  const lines = items.map(({ productId, quantity, color }) => {
     const product = products.find((entry) => entry.id === productId);
     const units = Number(quantity);
     if (!product || product.price <= 0 || !Number.isSafeInteger(units) || units < 1) return null;
     const count = units + (quantities.get(productId) ?? 0);
     if (count > (product.stock[store] ?? 0)) return null;
     quantities.set(productId, count);
-    return { name: product.name, quantity: units, unitPrice: product.price, total: units * product.price };
+    if (color) {
+      const colorKey = productId + ":" + color;
+      const availableInColor = product.colorStock?.[store]?.[color as ProductColor] ?? 0;
+      const totalInColor = units + (colorQuantities.get(colorKey) ?? 0);
+      if (totalInColor > availableInColor) return null;
+      colorQuantities.set(colorKey, totalInColor);
+    }
+    return { name: product.name + (color ? " · " + color : ""), quantity: units, unitPrice: product.price, total: units * product.price };
   });
   if (!lines.length || lines.some((line) => line === null)) return null;
   const subtotal = lines.reduce((sum, line) => sum + line!.total, 0);

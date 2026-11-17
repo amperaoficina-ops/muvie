@@ -83,7 +83,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
           <option value="sale">Venda</option><option value="gift">Brinde</option></SearchSelect></label>
         <label>Lote da compra<SearchSelect name="checkoutOrigin" required value={item.origin} onChange={(event) => patchItem(item.key, { origin: event.target.value, override: "" })}>
           <option value="">Selecione o lote</option>
-          {availableLots.filter((lot) => lot.productId === item.productId).map((lot) => <option key={lot.purchaseId} value={lot.purchaseId}>{lot.consigned ? "Consignado" : "Próprio"} · {lot.supplier} · {lot.date.split("-").reverse().join("/")} · {lot.quantity} un.{showCost ? " · " + money(lot.unitCost) + "/un." : ""}</option>)}
+          {availableLots.filter((lot) => lot.productId === item.productId).map((lot) => <option key={lot.purchaseId} value={lot.purchaseId}>{lot.color ?? "Sem cor definida"} · {lot.consigned ? "Consignado" : "Próprio"} · {lot.supplier} · {lot.date.split("-").reverse().join("/")} · {lot.quantity} un.{showCost ? " · " + money(lot.unitCost) + "/un." : ""}</option>)}
         </SearchSelect></label>
         {showCost && <label>Ajustar custo unitário (R$)<input name="checkoutCost" inputMode="decimal" maxLength={32} placeholder="Usar custo do lote"
           value={item.override ?? ""} onChange={(event) => patchItem(item.key, { override: event.target.value })} /></label>}

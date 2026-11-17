@@ -28,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         ${field("xMun", address.city)}${field("UF", address.state)}${field("CEP", address.postalCode?.replace(/\D/g, ""))}
       </enderDest>` : "") + field("email", contact?.email);
     const details = items.map((item, index) =>
-      `<det nItem="${index + 1}"><prod>${field("cProd", item.sku)}${field("xProd", item.productName)}
+      `<det nItem="${index + 1}"><prod>${field("cProd", item.sku)}${field("xProd", item.productName + ("color" in item && item.color ? " · " + item.color : ""))}
         ${field("qCom", item.quantity)}${field("vUnCom", decimal(item.unitPrice))}
         ${field("vProd", decimal(item.quantity * item.unitPrice))}</prod></det>`).join("\n");
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -99,7 +99,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const specs = product?.specs;
     const characteristics = scooterFields.flatMap(({ key, label }) => specs?.[key] ? [label + ": " + specs[key]] : []);
     const isGift = "gift" in line && line.gift;
-    section("Item " + (index + 1) + " · " + line.productName + (isGift ? " · Brinde" : ""), [
+    section("Item " + (index + 1) + " · " + line.productName + ("color" in line && line.color ? " · " + line.color : "") + (isGift ? " · Brinde" : ""), [
       ["Código interno", line.sku],
       ["Quantidade e valor unitário", String(line.quantity) + " un. × " + money(line.unitPrice)],
       ["Subtotal comercial antes de descontos", money(line.unitPrice * line.quantity)],

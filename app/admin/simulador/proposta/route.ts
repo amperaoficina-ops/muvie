@@ -2,7 +2,7 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 import { canAccess } from "@/domain/access";
 import { proposalQuote } from "@/domain/proposal";
-import { businessDate, cardMachineIsActive, money, rateMachineId, storeList } from "@/domain/retail";
+import { businessDate, cardMachineIsActive, money, productColorStock, rateMachineId, storeList } from "@/domain/retail";
 import { getCurrentUser } from "@/lib/auth";
 import { readRetail } from "@/lib/retail-store";
 
@@ -16,6 +16,7 @@ export async function POST(request: Request) {
   const fields = (name: string) => form.getAll(name).map(String);
   const ids = fields("product");
   const quantities = fields("quantity");
+  const colors = fields("color");
   const methods = fields("method");
   const amounts = fields("amount");
   const rates = fields("rate");
@@ -26,8 +27,9 @@ export async function POST(request: Request) {
   const store = storeList(state).find((unit) => unit.id === storeId);
   const validMachines = methods.every((method, index) => method !== "Cartão" ||
     state.cardRates.some((rate) => rate.id === rates[index] && rateMachineId(rate) === machines[index] && cardMachineIsActive(state.cardMachines, rateMachineId(rate))));
-  const quote = store && validMachines && proposalQuote(state.products, state.cardRates, store.id,
-    ids.map((productId, index) => ({ productId, quantity: quantities[index] ?? "" })),
+  const colorStock = productColorStock(state.stockLots);
+  const quote = store && validMachines && proposalQuote(state.products.map((item) => ({ ...item, colorStock: colorStock[item.id] })), state.cardRates, store.id,
+    ids.map((productId, index) => ({ productId, quantity: quantities[index] ?? "", color: colors[index] })),
     methods.map((method, index) => ({ method, amount: amounts[index] ?? "", rateId: rates[index] ?? "" })),
     String(form.get("discount") ?? ""));
   if (!store || !quote) return new Response("Confira os itens, estoque e condições de pagamento. Atualize o simulador e tente novamente.", { status: 400 });

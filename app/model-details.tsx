@@ -5,7 +5,7 @@ import { useId, useRef } from "react";
 import { scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { Icon, instagram } from "./brand";
 
-export function ModelDetails({ name, imageUrl, specs }: { name: string; imageUrl: string; specs?: ScooterSpecs | null }) {
+export function ModelDetails({ name, imageUrl, specs, colors = [] }: { name: string; imageUrl: string; specs?: ScooterSpecs | null; colors?: { color: string; available: boolean }[] }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const title = useId();
   return <>
@@ -18,12 +18,15 @@ export function ModelDetails({ name, imageUrl, specs }: { name: string; imageUrl
       <div className="model-dialog-layout">
         <div className="model-dialog-media">
           {imageUrl ? <Image src={imageUrl} alt={name} fill sizes="(max-width: 760px) 90vw, 50vw" unoptimized /> : <Icon name="bolt" size={48} />}
-          {specs?.colors && <p><strong>Cores</strong> {specs.colors}</p>}
+          {colors.length === 0 && specs?.colors && <p><strong>Cores</strong> {specs.colors}</p>}
         </div>
         <div className="model-dialog-content">
           <button type="button" className="model-dialog-close" aria-label="Fechar detalhes" onClick={() => dialog.current?.close()}>×</button>
           <p className="eyebrow">DETALHES DO MODELO</p>
           <h2 id={title}>{name}</h2>
+          {colors.length > 0 && <ul className="catalog-colors" aria-label="Disponibilidade por cor">
+            {colors.map(({ color, available }) => <li key={color}>{color} <small>{available ? "Em estoque" : "Sem estoque"}</small></li>)}
+          </ul>}
           <dl>{scooterFields.filter(({ key }) => key !== "colors").map(({ key, label }) => (
             <div key={key}><dt>{label}</dt><dd>{specs?.[key] || <span>A confirmar</span>}</dd></div>
           ))}</dl>
