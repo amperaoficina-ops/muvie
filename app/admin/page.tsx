@@ -871,7 +871,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
-          {!denied && state && primary && !actionBesideUnits && active.id !== "produtos" && active.id !== "taxas" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
+          {!denied && state && primary && !actionBesideUnits && active.id !== "produtos" && active.id !== "taxas" && active.id !== "financeiro" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
           {!denied && state && (active.id === "produtos" || active.id === "taxas") && primary && <div className="admin-filter-bar">
             <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
           </div>}
@@ -882,6 +882,9 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery}>Todas</Link>
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
+          {!denied && state && active.id === "financeiro" && primary && <div className="admin-filter-bar">
+            <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
+          </div>}
         </div>
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
@@ -912,7 +915,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
-          {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
+          {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} createError={params.ficha ? params.erro : undefined} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} machines={state.cardMachines} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
             lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}

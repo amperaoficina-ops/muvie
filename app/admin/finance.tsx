@@ -1,3 +1,4 @@
+import { CreateDialog } from "./sale-dialog";
 import { SearchSelect } from "./search-select";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
@@ -28,13 +29,31 @@ function HiddenFilter({ filter }: { filter: Filter }) {
 }
 
 function PeriodFilter({ period, filter, tab }: { period: Period; filter: Filter; tab: string }) {
-  return <form className="admin-form report-filter panel" method="get" action="/admin">
-    <input type="hidden" name="tab" value={tab} />
-    <input type="hidden" name="loja" value={filter} />
-    <label>De<input type="date" name="inicio" defaultValue={period.from} required /></label>
-    <label>Até<input type="date" name="fim" defaultValue={period.to} required /></label>
-    <button className="button yellow">Aplicar período</button>
-  </form>;
+  const end = today();
+  const presets = [
+    { label: "Este mês", from: end.slice(0, 7) + "-01" },
+    ...[7, 60, 90].map((days) => {
+      const date = new Date(end + "T00:00:00Z");
+      date.setUTCDate(date.getUTCDate() - (days - 1));
+      return { label: "Últimos " + days + " dias", from: date.toISOString().slice(0, 10) };
+    }),
+  ];
+  const active = presets.find((preset) => preset.from === period.from && end === period.to);
+  return <section className="panel" aria-label="Filtrar por período">
+    {tab === "financeiro" && <div className="panel-title">
+      <nav className="stock-category-filter" aria-label="Períodos rápidos">
+        {presets.map((preset) => <Link key={preset.label} aria-current={active === preset ? "page" : undefined}
+          href={"/admin?" + new URLSearchParams({ tab, loja: filter, inicio: preset.from, fim: end })}>{preset.label}</Link>)}
+      </nav>
+    </div>}
+    <form className="admin-form report-filter" method="get" action="/admin" key={period.from + period.to}>
+      <input type="hidden" name="tab" value={tab} />
+      <input type="hidden" name="loja" value={filter} />
+      <label>De<input type="date" name="inicio" defaultValue={period.from} required /></label>
+      <label>Até<input type="date" name="fim" defaultValue={period.to} required /></label>
+      <button className="button yellow">Aplicar período</button>
+    </form>
+  </section>;
 }
 
 function RankChart({ title, rows }: { title: string; rows: ReturnType<typeof salesRanking> }) {
@@ -176,11 +195,11 @@ export function StoreItemForm({ kind, store, item, staffPage = false, units = []
   </form>;
 }
 
-export function Finance({ state, filter, period }: { state: RetailState; filter: Filter; period: Period }) {
+export function Finance({ state, filter, period, createError }: { state: RetailState; filter: Filter; period: Period; createError?: string }) {
   const report = financialReport(state, period.from, period.to, filter || undefined);
   const entries = state.ledger.filter((item) => !filter || item.store === filter);
   const open = entries.filter((item) => balanceDue(item) > 0).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
-  const closed = entries.filter((item) => balanceDue(item) === 0 && item.settlements.some((row) => row.date >= period.from && row.date <= period.to || !!row.reversedOn && row.reversedOn >= period.from && row.reversedOn <= period.to));
+  const entryId = randomUUID();
   const rows: [string, number][] = [
     ["Receita líquida de descontos", report.revenue], ["Outras receitas", report.other], ["Custo das motos e produtos vendidos", -report.cost],
     ["Impostos sobre vendas", -report.taxes], ["Taxas de cartão", -report.cardFees], ["Comissões", -report.commissions], ["Salários lançados", -report.salary], ["Fixos lançados", -report.fixed], ["Outras despesas", -report.expenses],
@@ -200,8 +219,9 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
         <p className="admin-empty">As contas em aberto mostram todos os vencimentos. O período filtra o DRE, as baixas e os estornos.</p>
       </section>
     </div>
-    <section id="novo-compromisso" className="panel"><div className="panel-title"><h2>Novo compromisso</h2></div>
-      <form className="admin-form" action={saveLedgerEntry}><HiddenFilter filter={filter} /><input type="hidden" name="entryId" value={randomUUID()} />
+    <CreateDialog id="novo-compromisso" title="Novo compromisso" reopen={Boolean(createError)}>
+      {createError && <p className="feedback error" role="alert">{createError}</p>}
+      <form className="admin-form" action={saveLedgerEntry}><HiddenFilter filter={filter} /><input type="hidden" name="entryId" value={entryId} /><input type="hidden" name="focus" value={entryId} />
         <input type="hidden" name="inicio" value={period.from} /><input type="hidden" name="fim" value={period.to} />
         <label>Descrição<input name="name" maxLength={120} required placeholder="Ex.: internet, impostos ou serviço prestado" /></label>
         <label>Unidade<select name="store" defaultValue={filter} required><option value="">Selecione</option>{storeList(state).map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
@@ -212,9 +232,8 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
         <label>Vencimento<input type="date" name="due" required /></label>
         <div className="span-two"><Submit>Lançar compromisso</Submit></div>
       </form>
-    </section>
+    </CreateDialog>
     <LedgerList state={state} title="Compromissos em aberto" entries={open} filter={filter} period={period} />
-    <LedgerList state={state} title="Compromissos encerrados com movimentação no período" entries={closed} filter={filter} period={period} />
   </>;
 }
 
