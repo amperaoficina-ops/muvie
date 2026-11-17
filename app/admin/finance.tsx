@@ -173,7 +173,7 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
         <p className="admin-empty">As contas em aberto mostram todos os vencimentos. O período filtra o DRE, as baixas e os estornos.</p>
       </section>
     </div>
-    <section className="panel"><div className="panel-title"><h2>Novo compromisso</h2></div>
+    <section id="novo-compromisso" className="panel"><div className="panel-title"><h2>Novo compromisso</h2></div>
       <form className="admin-form" action={saveLedgerEntry}><HiddenFilter filter={filter} /><input type="hidden" name="entryId" value={randomUUID()} />
         <input type="hidden" name="inicio" value={period.from} /><input type="hidden" name="fim" value={period.to} />
         <label>Descrição<input name="name" maxLength={120} required placeholder="Ex.: internet, impostos ou serviço prestado" /></label>

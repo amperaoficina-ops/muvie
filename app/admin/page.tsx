@@ -52,6 +52,14 @@ const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Lojas", tabs: ["lojas"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
+const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
+  produtos: { label: "Novo produto", target: "novo-produto" },
+  compras: { label: "Registrar compra", target: "registrar-compra" },
+  estoque: { label: "Movimentar estoque", target: "movimentar-estoque" },
+  vendas: { label: "Nova venda", target: "nova-venda" },
+  crm: { label: "Novo cliente", target: "novo-cliente" },
+  financeiro: { label: "Novo compromisso", target: "novo-compromisso" },
+};
 type Filter = StoreId | "";
 
 function adminUrl(tab: Tab, store: Filter = "") {
@@ -205,7 +213,7 @@ function Products({ products, filter }: { products: Product[]; filter: Filter })
       <ProductForm product={product} filter={filter} />
       <div className="record-actions"><Link className="back-link" href={adminUrl("compras", filter) + "&produto=" + product.id}>Registrar compra deste produto →</Link></div>
     </details>)}</div> : <Empty>Cadastre seu primeiro produto para liberar movimentações e vendas.</Empty>}
-  </section><section className="panel"><div className="panel-title"><h2>Novo produto</h2></div><ProductForm filter={filter} /></section></div>;
+  </section><section id="novo-produto" className="panel"><div className="panel-title"><h2>Novo produto</h2></div><ProductForm filter={filter} /></section></div>;
 }
 
 function Purchases({ state, filter, invoices, focus, productId }: {
@@ -233,7 +241,7 @@ function Purchases({ state, filter, invoices, focus, productId }: {
         </details>
       ))}</div> : <Empty>As compras registradas nesta unidade aparecerão aqui.</Empty>}
     </section>
-    <section className="panel">
+    <section id="registrar-compra" className="panel">
       <div className="panel-title"><h2>Registrar compra</h2></div>
       {state.products.length ? <form action={savePurchase} className="admin-form">
         <FilterInput filter={filter} />
@@ -297,7 +305,7 @@ function Stock({ state, filter, category }: { state: RetailState; filter: Filter
           </div>}
         </td>)}</tr>)}</Table> : <Empty>Nenhum produto nesta seleção.</Empty>}
       </section>
-      <section className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
+      <section id="movimentar-estoque" className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
         {products.length ? <form action={updateStock} className="admin-form">
           <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><ProductField products={products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
           <StockFields units={storeList(state)} />
@@ -305,7 +313,7 @@ function Stock({ state, filter, category }: { state: RetailState; filter: Filter
         </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
       </section>
     </div>
-    <section className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
+    <section id="lotes-estoque" className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
       {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo"]}>{lots.map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
         return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{storeName(lot.store, state)}</td>
@@ -313,7 +321,7 @@ function Stock({ state, filter, category }: { state: RetailState; filter: Filter
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
       <p className="admin-empty">Saldos manuais e registros anteriores podem aparecer no saldo geral sem lote associado.</p>
     </section>
-    <section className="panel"><div className="panel-title"><h2>Histórico de movimentações</h2></div>
+    <section id="movimentacoes-estoque" className="panel"><div className="panel-title"><h2>Histórico de movimentações</h2></div>
       {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store, state)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
     </section>
   </>;
@@ -389,7 +397,7 @@ function Sales({ state, filter, invoices, focus }: { state: RetailState; filter:
   const products = state.products.filter((product) => product.price > 0 && (filter ? product.stock[filter] > 0 : storeList(state).some((store) => product.stock[store.id] > 0)));
   const saleId = randomUUID();
   return <div className="sales-workspace">
-    <section className="panel"><div className="panel-title"><h2>Nova venda</h2></div>
+    <section id="nova-venda" className="panel"><div className="panel-title"><h2>Nova venda</h2></div>
       {products.length ? <form className="admin-form" action={saveSale}>
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
         <StoreField units={storeList(state)} filter={filter} /><ProductField products={products} />
@@ -411,7 +419,7 @@ function Sales({ state, filter, invoices, focus }: { state: RetailState; filter:
       </form> : <Empty>Para registrar uma venda, cadastre um produto com preço e adicione saldo à unidade em <Link href={adminUrl("estoque", filter)}>Estoque</Link>.</Empty>}
     </section>
     {invoices && <SaleFollowUp state={state} sales={sales} invoices={invoices} filter={filter} />}
-    <section className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable state={state} sales={sales} filter={filter} canCancel invoices={invoices ?? []} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
+    <section id="historico-vendas" className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable state={state} sales={sales} filter={filter} canCancel invoices={invoices ?? []} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
   </div>;
 }
 
@@ -457,7 +465,7 @@ function CRM({ state, filter, invoices, focus, showSales, showPurchases }: {
           <ClientHistory state={state} contact={contact} invoices={invoices} showSales={showSales} showPurchases={showPurchases} />
         </section>}
       </details>)}</div> : <Empty>Adicione um contato para acompanhar a próxima conversa ou proposta.</Empty>}
-    </section><section className="panel"><div className="panel-title"><h2>Novo cliente</h2></div><ContactForm state={state} filter={filter} /></section></div>
+    </section><section id="novo-cliente" className="panel"><div className="panel-title"><h2>Novo cliente</h2></div><ContactForm state={state} filter={filter} /></section></div>
   </>;
 }
 
@@ -510,6 +518,15 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const categoryQuery = active.id === "estoque" && category ? "&" + new URLSearchParams({ categoria: category }) : "";
   const heading = active.id === "lojas" && filter ? "Unidade " + storeName(filter, state ?? undefined) : active.label;
 
+  const group = navGroups.find(({ tabs }) => tabs.includes(active.id))?.title;
+  const primary = moduleActions[active.id];
+  const shortcuts = [
+    ["vendas", "Nova venda", "Registrar cliente, produtos e pagamento"],
+    ["compras", "Registrar compra", "Lançar fornecedor e entrada de produtos"],
+    ["estoque", "Consultar estoque", "Ver saldos, lotes e movimentações"],
+    ["crm", "Novo cliente", "Abrir uma ficha de atendimento"],
+  ] as const;
+
   const sidebar = <aside className="sidebar">
       <Brand href="/admin" />
       <nav aria-label="Módulos do painel">{navGroups.map(({ title, tabs }) => {
@@ -528,30 +545,47 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   return <div className="admin-shell">
     <div className="desktop-admin-menu">{sidebar}</div>
     <div className="admin-main">
-      <header className="admin-top"><MobileMenu>{sidebar}</MobileMenu><p><span>MUVI-E</span> / Gestão de loja</p><div><span>{user.name}</span><form action={signOut}><button type="submit">Sair</button></form></div></header>
+      <header className="admin-top"><MobileMenu>{sidebar}</MobileMenu><p><span>Muvi-E</span> / {group}</p><div><span>{user.name}</span><form action={signOut}><button type="submit">Sair</button></form></div></header>
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
-        <div className="admin-heading"><div><p className="eyebrow">OPERAÇÃO MULTILOJA</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
+        <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
+          {!denied && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
-          {!denied && !["lojas", "taxas", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <nav className="branch-filter" aria-label="Filtrar por unidade">
+          {!denied && !["lojas", "taxas", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <div className="admin-filter-bar"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery}>Todas</Link>
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery} key={store.id}>{store.name}</Link>)}
-          </nav>}
+          </nav></div>}
         </div>
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
         {state && !invoices && <p className="feedback error" role="alert">Não foi possível carregar os anexos de notas fiscais.</p>}
         {denied ? <Link className="back-link" href={adminUrl(active.id)}>Abrir {active.label} →</Link> : !state ? <p className="feedback error" role="alert">Não foi possível ler o banco de dados local. Confira a conexão com o MongoDB.</p> : <>
-          {active.id === "visao" && <><Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} />{canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }<Overview state={state} filter={filter} showSales={showSales} />
+          {active.id === "visao" && <>
+            {shortcuts.some(([id]) => canAccess(user, id)) && <section className="panel">
+              <div className="panel-title"><h2>Ações rápidas</h2></div>
+              <div className="workspace-shortcuts">{shortcuts.filter(([id]) => canAccess(user, id)).map(([id, label, description]) => {
+                const target = id === "estoque" ? "" : "#" + moduleActions[id]?.target;
+                return <Link href={adminUrl(id, filter) + target} key={id}><strong>{label}</strong><small>{description}</small><Icon name="arrow" size={16} /></Link>;
+              })}</div>
+            </section>}
+            <Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} />{canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }<Overview state={state} filter={filter} showSales={showSales} />
             {(canAccess(user, "estoque") || canAccess(user, "consignados")) && <InventoryOverview state={state} filter={filter} showCost={canAccess(user, "financeiro") || showPurchases} />}
             {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}
           </>}
           {active.id === "produtos" && <Products products={state.products} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings state={state} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
-          {active.id === "estoque" && <Stock state={state} filter={filter} category={category} />}
+          {active.id === "estoque" && <>
+            <nav aria-label="Seções do estoque" className="workspace-section-links">
+              <a href="#lotes-estoque">Lotes em estoque</a><a href="#movimentacoes-estoque">Movimentações</a>
+            </nav>
+            <Stock state={state} filter={filter} category={category} />
+          </>}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
-          {active.id === "vendas" && <Sales state={state} filter={filter} invoices={invoices} focus={params.ficha} />}
+          {active.id === "vendas" && <>
+            <nav aria-label="Seções de vendas" className="workspace-section-links"><a href="#historico-vendas">Histórico de vendas</a></nav>
+            <Sales state={state} filter={filter} invoices={invoices} focus={params.ficha} />
+          </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}

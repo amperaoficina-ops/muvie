@@ -384,3 +384,27 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .stock-category-filter { display: flex; flex-wrap: wrap; gap: .45rem; min-width: 0; }
 .stock-category-filter a { display: inline-flex; align-items: center; min-height: 44px; padding: .45rem .78rem; border: 1px solid #e0e3eb; border-radius: 999px; background: #fff; font-size: .84rem; font-weight: 700; }
 .stock-category-filter a[aria-current] { background: #fff0ba; border-color: #e0b540; color: #513600; }
+
+/* Navegação e ações do backoffice */
+.admin-shell .admin-top { position: sticky; top: 0; z-index: 5; }
+.admin-shell .admin-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .85rem 1rem; }
+.admin-filter-bar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .8rem; color: #4e5665; font-size: .82rem; font-weight: 700; }
+.admin-shell .branch-filter a { display: inline-flex; align-items: center; min-height: 44px; }
+.admin-content [id] { scroll-margin-top: 5rem; }
+.admin-content section:target { outline: 2px solid #c29a20; outline-offset: 2px; }
+.workspace-shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 215px), 1fr)); gap: .65rem; padding: 1rem; }
+.workspace-shortcuts a { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .24rem .7rem; padding: .85rem; background: #f8f9fc; border: 1px solid #e0e3eb; border-radius: 10px; }
+.workspace-shortcuts small { grid-column: 1; color: #555d6c; font-size: .78rem; }
+.workspace-shortcuts svg { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+.workspace-shortcuts a:hover, .workspace-section-links a:hover { background: #fff4c7; }
+.workspace-section-links { display: flex; flex-wrap: wrap; gap: .45rem; }
+.workspace-section-links a { display: inline-flex; align-items: center; min-height: 44px; padding: .55rem .8rem; background: #fff; border: 1px solid #e0e3eb; border-radius: 9px; font-size: .85rem; font-weight: 700; }
+@media (min-width: 851px) {
+  .desktop-admin-menu { position: sticky; top: 0; align-self: start; height: 100dvh; overflow-y: auto; scrollbar-width: thin; background: #16181e; }
+}
+@media (max-width: 560px) {
+  .admin-shell .admin-heading { grid-template-columns: minmax(0, 1fr); }
+  .admin-heading > .button { justify-self: start; }
+  .admin-shell .admin-top > div:last-child { min-width: 0; }
+  .admin-shell .admin-top > div:last-child > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
