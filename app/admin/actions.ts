@@ -65,6 +65,12 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
   const params = new URLSearchParams({ tab });
   const category = form.get("stockCategory");
   if (tab === "estoque" && productCategories.some((item) => item === category)) params.set("categoria", String(category));
+  if (tab === "estoque") {
+    const view = form.get("stockView");
+    const search = form.get("stockSearch");
+    if (typeof view === "string" && ["produtos", "lotes", "movimentacoes"].includes(view)) params.set("estoqueVisao", view);
+    if (typeof search === "string" && search.trim()) params.set("busca", search.trim().slice(0, 100));
+  }
   for (const key of ["inicio", "fim"]) {
     const date = form.get(key);
     if (typeof date === "string" && isCalendarDate(date)) params.set(key, date);

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function RecordSearch({ tab, store, category, stage, query }: { tab: string; store: string; category?: string; stage?: string; query: string }) {
+export function RecordSearch({ tab, store, category, stage, query, view }: { tab: string; store: string; category?: string; stage?: string; view?: string; query: string }) {
   const router = useRouter();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [value, setValue] = useState(query);
@@ -15,6 +15,7 @@ export function RecordSearch({ tab, store, category, stage, query }: { tab: stri
     const params = new URLSearchParams({ tab });
     if (store) params.set("loja", store);
     if (category) params.set("categoria", category);
+    if (view) params.set("estoqueVisao", view);
     if (stage) params.set("etapa", stage);
     if (text.trim()) params.set("busca", text.trim());
     timer.current = setTimeout(() => router.replace("/admin?" + params, { scroll: false }), delay);

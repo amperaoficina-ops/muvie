@@ -58,6 +58,7 @@ const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
 const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
+  estoque: { label: "Movimentar estoque", target: "movimentar-estoque" },
   produtos: { label: "Novo produto", target: "novo-produto" },
   compras: { label: "Registrar compra", target: "registrar-compra" },
   vendas: { label: "Nova venda", target: "nova-venda" },
@@ -229,10 +230,10 @@ function matchesSearch(query: string, ...fields: string[]) {
   return !query || searchText(fields.join(" ")).includes(searchText(query));
 }
 
-function CategoryFilters({ tab, filter, category, query }: { tab: "estoque" | "produtos"; filter: Filter; category?: Product["category"]; query: string }) {
+function CategoryFilters({ tab, filter, category, query, view }: { tab: "estoque" | "produtos"; filter: Filter; category?: Product["category"]; query: string; view?: string }) {
   return <nav className="stock-category-filter" aria-label="Filtrar por categoria">
       {[undefined, ...productCategories].map((item) => <Link key={item ?? "all"} aria-current={item === category ? "true" : undefined}
-        href={adminUrl(tab, filter) + "&" + new URLSearchParams({ ...(item ? { categoria: item } : {}), ...(query ? { busca: query } : {}) })}>
+        href={adminUrl(tab, filter) + "&" + new URLSearchParams({ ...(item ? { categoria: item } : {}), ...(query ? { busca: query } : {}), ...(view ? { estoqueVisao: view } : {}) })}>
         {item ?? "Todas as categorias"}
       </Link>)}
     </nav>;
@@ -335,6 +336,11 @@ function purchaseStatus(state: RetailState, id: string, condition?: string) {
 }
 
 const stockPageSize = 10;
+const stockViews = [
+  { id: "produtos", label: "Produtos" },
+  { id: "lotes", label: "Lotes" },
+  { id: "movimentacoes", label: "Movimentações" },
+] as const;
 
 function stockPage(count: number, requested?: string) {
   const pages = Math.max(1, Math.ceil(count / stockPageSize));
@@ -354,7 +360,7 @@ function StockPagination({ name, page, href }: { name: string; page: ReturnType<
   </nav>;
 }
 
-function Stock({ state, filter, category, showPurchases, movementPage, balancePage, lotPage, query }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; movementPage?: string; balancePage?: string; lotPage?: string; query: string }) {
+function Stock({ state, filter, category, showPurchases, movementPage, balancePage, lotPage, query, view, error }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; movementPage?: string; balancePage?: string; lotPage?: string; query: string; view: string; error?: string }) {
   const products = state.products.filter((product) => (!category || product.category === category) && matchesSearch(query, product.name, product.sku, product.category));
   const ids = new Set(products.map((product) => product.id));
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
@@ -364,7 +370,7 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
   const stockLots = stockPage(lots.length, lotPage);
   const history = stockPage(movements.length, movementPage);
   const pageUrl = (key: string, number: number, section: string) => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ estoqueVisao: view });
     if (category) params.set("categoria", category);
     if (query) params.set("busca", query);
     for (const [name, current] of [["saldosPagina", balances.current], ["lotesPagina", stockLots.current], ["movimentosPagina", history.current]] as const) {
@@ -373,17 +379,25 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
     }
     return adminUrl("estoque", filter) + (params.size ? "&" + params : "") + "#" + section;
   };
+  const tableFilters = <div className="panel-title">
+    <CategoryFilters tab="estoque" filter={filter} category={category} query={query} view={view} />
+    <RecordSearch key={view + ":" + filter + ":" + (category ?? "")} tab="estoque" store={filter} category={category} query={query} view={view} />
+  </div>;
   return <>
-    <CategoryFilters tab="estoque" filter={filter} category={category} query={query} />
-    <section id="movimentar-estoque" className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
-      {products.length ? <form action={updateStock} className="admin-form">
-        <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><ProductField products={products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
+    <nav className="branch-filter" aria-label="Seções do estoque">
+      {stockViews.map(({ id, label }) => <Link key={id} aria-current={view === id ? "page" : undefined}
+        href={adminUrl("estoque", filter) + "&" + new URLSearchParams({ estoqueVisao: id, ...(category ? { categoria: category } : {}), ...(query ? { busca: query } : {}) })}>{label}</Link>)}
+    </nav>
+    <CreateDialog id="movimentar-estoque" title="Movimentar estoque" reopen={Boolean(error)}>
+      {error && <p className="feedback error" role="alert">{error}</p>}
+      {state.products.length ? <form action={updateStock} className="admin-form">
+        <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><input type="hidden" name="stockView" value={view} /><input type="hidden" name="stockSearch" value={query} /><ProductField products={state.products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
         <StockFields units={storeList(state)} />
         <div className="span-two"><Submit>Salvar operação</Submit></div>
       </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
-    </section>
-    <section id="saldos-estoque" className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
-      <div className="panel-title"><RecordSearch key={filter + ":" + (category ?? "")} tab="estoque" store={filter} category={category} query={query} /></div>
+    </CreateDialog>
+    {view === "produtos" && <section id="saldos-estoque" className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
+      {tableFilters}
       {products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{products.slice(balances.start, balances.start + stockPageSize).map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td>{columns.map((store) => <td key={store.id}>
         <strong>{product.stock[store.id] ?? 0} un.</strong>
         {(product.stock[store.id] ?? 0) > 0 && <div className="inventory-tags">
@@ -397,8 +411,9 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
         </div>}
       </td>)}</tr>)}</Table> : <Empty>Nenhum produto nesta seleção.</Empty>}
       <StockPagination name="saldos por unidade" page={balances} href={(number) => pageUrl("saldosPagina", number, "saldos-estoque")} />
-    </section>
-    <section id="lotes-estoque" className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
+    </section>}
+    {view === "lotes" && <section id="lotes-estoque" className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
+      {tableFilters}
       {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.slice(stockLots.start, stockLots.start + stockPageSize).map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
         return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{storeName(lot.store, state)}</td>
@@ -406,11 +421,12 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
       <StockPagination name="lotes em estoque" page={stockLots} href={(number) => pageUrl("lotesPagina", number, "lotes-estoque")} />
       <p className="admin-empty">Para vender unidades antigas sem lote, registre a compra em Compras e marque a opção de vincular ao saldo já existente.</p>
-    </section>
-    <section id="movimentacoes-estoque" className="panel"><div className="panel-title"><h2>Histórico de movimentações</h2></div>
+    </section>}
+    {view === "movimentacoes" && <section id="movimentacoes-estoque" className="panel"><div className="panel-title"><h2>Histórico de movimentações</h2></div>
+      {tableFilters}
       {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.slice(history.start, history.start + stockPageSize).map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store, state)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
       <StockPagination name="histórico de movimentações" page={history} href={(number) => pageUrl("movimentosPagina", number, "movimentacoes-estoque")} />
-    </section>
+    </section>}
   </>;
 }
 
@@ -665,7 +681,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -690,6 +706,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 
   const units = storeList(state ?? undefined);
   const category = productCategories.find((item) => item === params.categoria);
+  const stockView = stockViews.find(({ id }) => id === params.estoqueVisao)?.id ?? "produtos";
+  const stockViewQuery = active.id === "estoque" ? "&" + new URLSearchParams({ estoqueVisao: stockView }) : "";
   const categoryQuery = active.id === "estoque" && category ? "&" + new URLSearchParams({ categoria: category }) : "";
   const supportsSearch = ["estoque", "compras", "produtos", "crm"].includes(active.id);
   const query = supportsSearch && typeof params.busca === "string" ? params.busca.trim().slice(0, 100) : "";
@@ -738,8 +756,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <div className={"admin-filter-bar" + (active.id === "crm" ? " crm-filter-bar" : "")}>
             {active.id === "crm" && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
             <div className="unit-filter"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
-            <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery + searchQuery}>Todas</Link>
-            {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery} key={store.id}>{store.name}</Link>)}
+            <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery}>Todas</Link>
+            {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
         </div>
         {!denied && state && supportsSearch && active.id !== "estoque" && active.id !== "crm" && <RecordSearch key={active.id + ":" + filter + ":" + (category ?? "")}
@@ -763,12 +781,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "produtos" && <Products category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings state={state} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
-          {active.id === "estoque" && <>
-            <nav aria-label="Seções do estoque" className="workspace-section-links">
-              <a href="#lotes-estoque">Lotes em estoque</a><a href="#movimentacoes-estoque">Movimentações</a>
-            </nav>
-            <Stock balancePage={params.saldosPagina} lotPage={params.lotesPagina} query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />
-          </>}
+          {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
+            query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
           {active.id === "compras" && <Purchases query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
