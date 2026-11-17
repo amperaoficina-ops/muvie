@@ -50,6 +50,8 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
     return sum + (rate ? cardQuote(parseReais(amounts[index]) ?? 0, rate).fee : 0);
   }, 0);
   const receivedGross = payments.reduce((sum, payment, index) => sum + (payment.received ? (parseReais(amounts[index]) ?? 0) : 0), 0);
+  const receivedInProducts = payments.reduce((sum, payment, index) => sum +
+    (payment.received && payment.method === "Produto" ? parseReais(amounts[index]) ?? 0 : 0), 0);
   const receivedFees = payments.reduce((sum, payment, index) => {
     const rate = payment.received && payment.method === "Cartão" ? rates.find((item) => item.id === payment.rateId) : undefined;
     return sum + (rate ? cardQuote(parseReais(amounts[index]) ?? 0, rate).fee : 0);
@@ -119,7 +121,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
       <div><p>Total da venda</p><strong>{money(total)}</strong></div>
       <div><p>Imposto estimado</p><strong>{money(tax)}</strong></div>
       <div><p>Taxas de cartão</p><strong>{money(fees)}</strong></div>
-      <div><p>Recebido líquido estimado</p><strong>{money(receivedGross - receivedFees)}</strong></div>
+      <div><p>Recebido líquido estimado em caixa</p><strong>{money(receivedGross - receivedInProducts - receivedFees)}</strong></div>
       <div><p>A receber</p><strong>{money(entered - receivedGross)}</strong></div>
       {showCost && <>
         <div><p>Custo dos itens e brindes</p><strong>{money(cost)}</strong>{missingCost && <small>Há itens sem custo cadastrado</small>}</div>

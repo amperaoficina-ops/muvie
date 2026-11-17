@@ -15,12 +15,12 @@ export type Asset = { id: string; name: string; store: StoreId; quantity: number
 export type LedgerEntry = {
   id: string; store: StoreId; name: string; direction: "in" | "out";
   kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste";
-  amount: number; date: string; due: string; saleId?: string; cardFee?: number; canceled?: boolean; manual?: boolean;
+  amount: number; date: string; due: string; saleId?: string; cardFee?: number; nonCash?: boolean; canceled?: boolean; manual?: boolean;
   settlements: { id: string; amount: number; date: string; reversedOn?: string }[];
 };
 export type StockLot = { purchaseId: string; productId: string; store: StoreId; quantity: number; unitCost: number; consigned: boolean; supplier: string; date: string };
 export const stages = ["Novo", "Em atendimento", "Proposta", "Ganho", "Perdido"] as const;
-export const paymentMethods = ["Pix", "Cartão", "Dinheiro", "Financiamento"] as const;
+export const paymentMethods = ["Pix", "Cartão", "Dinheiro", "Financiamento", "Produto"] as const;
 export const productCategories = ["Scooter elétrica", "Acessório", "Peça"] as const;
 export type TaxRate = { id: string; name: string; basisPoints: number; defaultForSale: boolean };
 export type SaleTax = { amount: number; name: string; basisPoints?: number };
@@ -204,6 +204,7 @@ export function financialReport(state: RetailState, from: string, to: string, st
       if (entry.kind === "despesa") rows.expenses += entry.amount;
       if (entry.kind === "outra-receita") rows.other += entry.amount;
     }
+    if (entry.nonCash) continue;
     const events = entry.settlements.flatMap((payment) => [
       { date: payment.date, amount: payment.amount },
       ...(payment.reversedOn ? [{ date: payment.reversedOn, amount: -payment.amount }] : []),
@@ -451,7 +452,7 @@ export function recordSale(state: RetailState, input: SaleInput, gift = false) {
   });
   if (receive && total > 0) state.ledger.unshift({
     id: input.id + "-receipt", saleId: input.id, store: input.store, name: "Venda · " + product.name,
-    kind: "venda", direction: "in", amount: total, date, due: receive.mode === "pending" ? receive.due : date,
+    kind: "venda", direction: "in", amount: total, nonCash: input.method === "Produto" || undefined, date, due: receive.mode === "pending" ? receive.due : date,
     settlements: receive.mode === "received" ? [{ id: input.id + "-received", amount: total, date }] : [],
   });
   if (seller && commission > 0) state.ledger.unshift({
@@ -543,7 +544,7 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
     const id = input.id + "-payment-" + index;
     draft.ledger.unshift({ id, saleId: input.id, store: input.store, kind: "venda", direction: "in",
       name: "Venda · " + payment.method + (payment.fee ? " · taxa " + money(payment.fee) : ""),
-      amount: payment.amount, cardFee: payment.fee, date, due: payment.due,
+      amount: payment.amount, cardFee: payment.fee, nonCash: payment.method === "Produto" || undefined, date, due: payment.due,
       settlements: payment.received ? [{ id: id + "-received", amount: payment.amount, date }] : [] });
   }
   draft.sales.unshift({ ...first, id: input.id, total, discount: input.discount, commission, lines, payments, tax,

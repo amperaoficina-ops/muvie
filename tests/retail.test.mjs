@@ -270,3 +270,15 @@ test("cancelamento preserva o saldo anterior e bloqueia lotes com unidades já b
   cancelPurchase(state, "lote-sj", date);
   assert.equal(state.products[0].stock["sao-jose"], 3);
 });
+
+test("produto recebido na troca quita a venda sem entrar no caixa", () => {
+  const state = fixture();
+  linkOldStock(state, "lote", "scooter", "palhoca", 300000);
+  recordCheckout(state, { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "lote" }],
+    payments: [{ method: "Pix", amount: 389900, received: true, due: "" },
+      { method: "Produto", amount: 200000, received: true, due: "" }] });
+  const report = financialReport(state, "2026-11-07", "2026-11-07", "palhoca");
+  assert.equal(report.revenue, 589900);
+  assert.equal(report.cash, 389900);
+  assert.equal(report.receivable, 0);
+});
