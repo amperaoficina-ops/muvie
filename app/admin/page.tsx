@@ -245,9 +245,12 @@ function Products({ products, filter, query, focus, error, category }: { product
       {error && !focus && <p className="feedback error" role="alert">{error}</p>}
       <ProductForm filter={filter} />
     </CreateDialog>
-    <CategoryFilters tab="produtos" filter={filter} category={category} query={query} />
     <section className="panel">
       <div className="panel-title"><h2>Produtos cadastrados</h2><span className="pill">{products.length} produto(s)</span></div>
+      <div className="panel-title">
+        <CategoryFilters tab="produtos" filter={filter} category={category} query={query} />
+        <RecordSearch key={filter + ":" + (category ?? "")} tab="produtos" store={filter} category={category} query={query} />
+      </div>
       {products.length ? <Table headers={["Produto", "Categoria", "Preço de venda", "Status", "Ação"]}>
         {products.map((product) => <tr key={product.id}>
           <td><strong>{product.name}</strong><small>{product.sku}</small></td>
@@ -633,8 +636,8 @@ function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, 
           <span>{label}</span><strong>{value ? list.filter((item) => item.stage === value).length : list.length}</strong>
         </Link>)}
     </nav>
-    <RecordSearch key={filter + ":" + (selected ?? "")} tab="crm" store={filter} stage={selected} query={query} />
     <section className="panel"><div className="panel-title"><h2>Clientes e oportunidades</h2></div>
+      <div className="panel-title"><RecordSearch key={filter + ":" + (selected ?? "")} tab="crm" store={filter} stage={selected} query={query} /></div>
       {visible.length ? <Table headers={["Cliente", "Unidade", "Interesse", "Próximo retorno", "Status", "Ação"]}>
         {visible.map((contact) => <tr key={contact.id}>
           <td><strong>{contact.name}</strong></td>
@@ -761,8 +764,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
         </div>
-        {!denied && state && supportsSearch && active.id !== "estoque" && active.id !== "crm" && <RecordSearch key={active.id + ":" + filter + ":" + (category ?? "")}
-          tab={active.id} store={filter} category={active.id === "produtos" ? category : undefined} query={query} />}
+        {!denied && state && active.id === "compras" && <RecordSearch key={filter} tab="compras" store={filter} query={query} />}
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
         {state && !invoices && <p className="feedback error" role="alert">Não foi possível carregar os anexos de notas fiscais.</p>}
