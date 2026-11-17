@@ -322,10 +322,17 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .admin-shell .panel-title h2 { letter-spacing: -.015em; }
 .admin-shell .admin-form { gap: 1rem; padding: 1.15rem; }
 .admin-shell :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]), select, textarea) {
-  background-color: #dce1e8;
+  background-color: #fff;
   color: #181b23;
-  border-color: #798596;
+  border-color: #a0aab8;
   border-radius: 8px;
+}
+.admin-shell :is(.admin-form, .invoice-form) label:has(> :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]), select, textarea)) {
+  min-width: 0;
+  padding: .65rem .75rem;
+  border-radius: 10px;
+  background-color: #e3e7ed;
+  color: #181b23;
 }
 .admin-shell :is(.address-fields, .scooter-fields) {
   background-color: #f3f5f7;
