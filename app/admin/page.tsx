@@ -339,11 +339,12 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
 
               <section className="sale-detail-card">
                 <h3>Dados da compra</h3>
-                <dl className="finance-rows">
-                  <div><dt>Fornecedor</dt><dd>{purchase.supplier}</dd></div>
-                  {purchase.invoiceNumber && <div><dt>Número da nota fiscal</dt><dd>{purchase.invoiceNumber}</dd></div>}
-                </dl>
-                {purchase.notes && <div><h4>Observações</h4><p>{purchase.notes}</p></div>}
+                <div className="admin-form">
+                  <label>Fornecedor<input value={purchase.supplier} readOnly /></label>
+                  <label>Número da nota fiscal<input value={purchase.invoiceNumber || "Não informado"} readOnly /></label>
+                  <label>Entrada no estoque<input value={purchase.openingBalance ? "Vínculo com saldo existente" : "Entrada registrada pela compra"} readOnly /></label>
+                  <label className="span-two">Observações<textarea value={purchase.notes || "Sem observações"} rows={3} readOnly /></label>
+                </div>
                 {purchase.specs && Object.values(purchase.specs).some(Boolean) && <details>
                   <summary>Ficha técnica registrada</summary>
                   <dl className="purchase-specs">{scooterFields.filter(({ key }) => purchase.specs?.[key]).map(({ key, label }) => (
@@ -354,24 +355,20 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
 
               <section className="sale-detail-card">
                 <h3>Lote e estoque</h3>
-                <div className="sale-statuses">{(purchase.lotColors ?? [{ color: purchase.color, quantity: purchase.quantity }]).map((row) =>
-                  <span className="pill" key={row.color ?? "none"}>{row.color ?? "Sem cor definida"} · {row.quantity} un.</span>)}</div>
+                {purchase.canceledAt && <div className="sale-statuses">{(purchase.lotColors ?? [{ color: purchase.color, quantity: purchase.quantity }]).map((row) =>
+                  <span className="pill" key={row.color ?? "none"}>{row.color ?? "Sem cor definida"} · {row.quantity} un.</span>)}</div>}
                 {!purchase.canceledAt && <>
-                  <details><summary>Editar custo do lote</summary>
-                    <form className="admin-form" action={savePurchaseCost}>
+                  <form className="admin-form" action={savePurchaseCost}>
                       <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
                       <label>Custo unitário do lote (R$)<input name="unitCost" inputMode="decimal" required defaultValue={(purchase.unitCost / 100).toFixed(2).replace(".", ",")} /></label>
                       <div><Submit>Atualizar custo do lote</Submit></div>
                       <p className="form-note span-two">As vendas já registradas mantêm seus custos. Ajuste-as pelo histórico de vendas, se necessário.</p>
-                    </form>
-                  </details>
-                  <details><summary>Editar cores do lote</summary>
-                    <form className="admin-form" action={savePurchaseColor}>
+                  </form>
+                  <form className="admin-form" action={savePurchaseColor}>
                       <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
                       <LotColorFields editing total={purchase.quantity} initial={purchase.lotColors ?? [{ color: purchase.color, quantity: purchase.quantity }]} />
                       <div><Submit>Salvar cores do lote</Submit></div>
-                    </form>
-                  </details>
+                  </form>
                 </>}
               </section>
 
