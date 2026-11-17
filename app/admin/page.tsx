@@ -28,7 +28,7 @@ import { Submit } from "./submit";
 import { CardSettings, Charts, TestimonialsSettings, UsersPanel } from "./operations";
 import { Simulator } from "./simulator";
 import { Finance, Rankings, reportPeriod, StoresPanel } from "./finance";
-import { canAccess } from "@/domain/access";
+import { isPrimaryAdmin, canAccess } from "@/domain/access";
 
 const nav = [
   { id: "visao", label: "Visão geral", icon: "grid", description: "Acompanhe o estoque, as vendas e os atendimentos das suas lojas." },
@@ -339,11 +339,11 @@ function Stock({ state, filter, category, showPurchases }: { state: RetailState;
 }
 
 function SaleDocuments({ sale, filter, invoices }: { sale: Sale; filter: Filter; invoices: InvoiceMeta[] }) {
-  return <div className="sale-document-grid">
-    <div><h3>Contrato</h3><p>Minuta preenchida com os dados da venda, para revisão antes da assinatura.</p>
-      {!sale.canceledAt && <a className="back-link" href={`/admin/vendas/${sale.id}/contrato`}>Baixar minuta em PDF ↓</a>}
+  return <section className="sale-detail-card"><h3>Documentos</h3><div className="sale-document-grid">
+    <div><h4>Contrato</h4><p>Minuta preenchida com os dados da venda, para revisão antes da assinatura.</p>
+      {!sale.canceledAt && <a className="button" href={`/admin/vendas/${sale.id}/contrato`}>Baixar minuta em PDF ↓</a>}
     </div>
-    {!sale.canceledAt && <div><h3>Ficha fiscal para o contador</h3>
+    {!sale.canceledAt && <div><h4>Ficha fiscal para o contador</h4>
       <p>Exporte os dados da venda e do produto para preparar a emissão. Após a autorização, anexe a nota abaixo.</p>
       <form action={saveSaleFiscalNotes} className="invoice-form">
         <FilterInput filter={filter} /><input type="hidden" name="focus" value={sale.id} />
@@ -351,10 +351,10 @@ function SaleDocuments({ sale, filter, invoices }: { sale: Sale; filter: Filter;
           defaultValue={sale.fiscalNotes} placeholder="Ex.: número de série, chassi ou observações da operação" /></label>
         <Submit>Salvar informações</Submit>
       </form>
-      <a className="back-link" href={`/admin/vendas/${sale.id}/fiscal`}>Baixar ficha fiscal em PDF ↓</a>
+      <a className="button" href={`/admin/vendas/${sale.id}/fiscal`}>Baixar ficha fiscal em PDF ↓</a>
     </div>}
     <InvoiceBox owner="sale" id={sale.id} filter={filter} invoices={invoices} />
-  </div>;
+  </div></section>;
 }
 
 function saleStatus(sale: Sale, state: RetailState) {
@@ -364,7 +364,7 @@ function saleStatus(sale: Sale, state: RetailState) {
   return entries.some((entry) => balanceDue(entry) > 0) ? "A receber" : "Recebida";
 }
 
-function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, detailFeedback, showCost = false }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[] | null; focus?: string; detailFeedback?: { message: string; error: boolean }; showCost?: boolean }) {
+function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, detailFeedback, canEditCosts = false, showCost = false }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[] | null; focus?: string; detailFeedback?: { message: string; error: boolean }; canEditCosts?: boolean; showCost?: boolean }) {
   return <Table headers={["Venda", "Unidade", "Total", "Recebimento", ...(canCancel ? ["Nota fiscal", "Ação"] : [])]}>{sales.map((sale) => {
     const status = saleStatus(sale, state);
     const hasInvoice = invoices?.some((invoice) => invoice.owner === "sale" && invoice.ownerId === sale.id);
@@ -377,22 +377,23 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
         <SaleDetailsDialog id={"detalhes-" + sale.id} reopen={focus === sale.id}>
           <div className="sale-detail-content">
           {focus === sale.id && detailFeedback && <p className={"feedback " + (detailFeedback.error ? "error" : "success")} role={detailFeedback.error ? "alert" : "status"}>{detailFeedback.message}</p>}
-          <div><h3>{sale.customer}</h3><p>{storeName(sale.store, state)} · {dateLabel(sale.createdAt)}{sale.sellerName && " · " + sale.sellerName}</p>
-            <p>{status} · Nota fiscal: {invoiceStatus}</p></div>
+          <div className="sale-detail-card sale-summary"><h3>{sale.customer}</h3><p>{storeName(sale.store, state)} · {dateLabel(sale.createdAt)}{sale.sellerName && " · " + sale.sellerName}</p>
+            <div className="sale-statuses"><span className={"pill " + (status === "Recebida" ? "green" : "")}>{status}</span><span className={"pill " + (hasInvoice ? "green" : "")}>Nota fiscal {invoiceStatus.toLowerCase()}</span></div></div>
+          <section className="sale-detail-card"><h3>Itens da venda</h3>
           <Table headers={["Item", "Qtd.", "Unitário", "Total", ...(showCost ? ["Custo"] : [])]}>
             {(sale.lines ?? [sale]).map((line, index) => <tr key={index}>
               <td>{line.productName}{"gift" in line && line.gift && " (brinde)"}</td><td>{line.quantity}</td>
               <td>{money(line.unitPrice)}</td><td>{money(line.total)}</td>
               {showCost && <td>{line.cost == null || line.missingCostUnits ? "Pendente" : money(line.cost)}</td>}
             </tr>)}
-          </Table>
-          <div><h3>Pagamento</h3>
+          </Table></section>
+          <section className="sale-detail-card"><h3>Pagamento</h3>
             <p>{sale.payments?.length ? sale.payments.map((payment) => payment.method + " " + money(payment.amount)).join(" · ") : sale.method}</p>
-            <p>Desconto {money(sale.discount)} · <strong>Total {money(sale.total)}</strong></p>
+            <dl className="sale-payment-totals"><div><dt>Desconto</dt><dd>{money(sale.discount)}</dd></div><div><dt>Total da venda</dt><dd>{money(sale.total)}</dd></div></dl>
             {showCost && <p>Taxas {money(sale.cardFees ?? 0)} · Imposto {money(sale.tax?.amount ?? 0)} · Comissão {money(sale.commission ?? 0)}</p>}
-          </div>
+          </section>
           <SaleDocuments sale={sale} filter={filter} invoices={invoices ?? []} />
-          {showCost && !sale.canceledAt && <details className="sale-documents"><summary>Editar custos</summary>
+          {canEditCosts && !sale.canceledAt && <details className="sale-detail-card sale-documents"><summary>Editar custos</summary>
         <form action={saveSaleCosts} className="invoice-form">
           <FilterInput filter={filter} /><input type="hidden" name="focus" value={sale.id} />
           {(sale.lines ?? [sale]).map((line, index) => <label key={index}>{line.productName} · custo total de {line.quantity} un.
@@ -401,7 +402,7 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
           </label>)}
           <Submit>Salvar custos</Submit>
         </form>
-      </details>}{!sale.canceledAt && <details className="cancel-sale"><summary>Cancelar</summary>
+      </details>}{!sale.canceledAt && <details className="sale-detail-card cancel-sale"><summary>Cancelar venda</summary>
         <form action={reverseSale}><FilterInput filter={filter} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="focus" value={sale.id} />
           <p>As unidades voltam ao estoque de {storeName(sale.store, state)}.</p>
           <label className="checkbox"><input type="checkbox" name="refund" /> Já devolvi o valor recebido, se houver</label>
@@ -414,7 +415,7 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
   })}</Table>;
 }
 
-function Sales({ state, filter, invoices, focus, error, showCost, saleFilter, detailFeedback }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string; error?: string; showCost: boolean; saleFilter?: string; detailFeedback?: { message: string; error: boolean } }) {
+function Sales({ state, filter, invoices, focus, error, showCost, canEditCosts, saleFilter, detailFeedback }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string; error?: string; showCost: boolean; canEditCosts: boolean; saleFilter?: string; detailFeedback?: { message: string; error: boolean } }) {
   const sales = state.sales.filter((sale) => !filter || sale.store === filter);
   const active = sales.filter((sale) => !sale.canceledAt);
   const attached = new Set(invoices?.filter((invoice) => invoice.owner === "sale").map((invoice) => invoice.ownerId));
@@ -456,7 +457,7 @@ function Sales({ state, filter, invoices, focus, error, showCost, saleFilter, de
     </section>
     <section id="historico-vendas" className="panel">
       <div className="panel-title"><h2>Histórico de vendas</h2><span>{selected.label}</span></div>
-      {selected.rows.length ? <SalesTable state={state} sales={selected.rows} filter={filter} canCancel showCost={showCost} invoices={invoices} focus={focus} detailFeedback={detailFeedback} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}
+      {selected.rows.length ? <SalesTable state={state} sales={selected.rows} filter={filter} canCancel canEditCosts={canEditCosts} showCost={showCost} invoices={invoices} focus={focus} detailFeedback={detailFeedback} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}
     </section>
   </div>;
 }
@@ -621,7 +622,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           </>}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
-            <Sales detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
+            <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}

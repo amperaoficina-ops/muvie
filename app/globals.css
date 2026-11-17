@@ -444,3 +444,17 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 .sale-filters > a:hover { border-color: #806905; }
 .sale-filters > a[aria-current="true"] { background: #fff3c2; border-color: #806905; }
 .sale-detail-content { display: grid; gap: 1rem; padding: 1rem; min-width: 0; text-align: left; white-space: normal; }
+
+
+.sale-detail-card { display: grid; gap: .75rem; padding: 1rem; background: #fff; border: 1px solid #dbe0e8; border-radius: 12px; min-width: 0; }
+.sale-detail-card h3 { font-size: 1rem; font-weight: 750; }
+.sale-detail-card h4 { font-size: .9rem; font-weight: 700; }
+.sale-summary { background: #f3f5f8; }
+.sale-statuses { display: flex; flex-wrap: wrap; gap: .5rem; }
+.sale-payment-totals { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin: 0; }
+.sale-payment-totals dt { font-size: .8rem; color: #555d6c; }
+.sale-payment-totals dd { margin: .2rem 0 0; font-size: 1.1rem; font-weight: 750; }
+.sale-detail-card .sale-document-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); min-width: 0; margin: 0; }
+.sale-detail-card .sale-document-grid > * { display: grid; align-content: start; justify-items: start; gap: .5rem; margin: 0; padding: .85rem; background: #f8f9fc; border: 1px solid #dbe0e8; border-radius: 8px; min-width: 0; }
+.sale-detail-card .invoice-form { width: 100%; }
+.sale-detail-card summary { cursor: pointer; }
