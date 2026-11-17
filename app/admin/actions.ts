@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   acquisitionTypes, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, updateSaleCosts, updatePurchaseCost,
-  postMonthlyCosts, reverseSettlement, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
+  postMonthlyCosts, returnConsignedLot, reverseSettlement, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
@@ -190,6 +190,16 @@ export async function saveUser(form: FormData) {
       if (!result.upsertedCount) throw new RetailError("Este e-mail já está cadastrado.");
     }
     await editWithAudit(actor, "Acesso de usuário atualizado: " + email, () => {});
+  });
+}
+
+export async function returnConsignment(form: FormData) {
+  const createdAt = new Date().toISOString();
+  await commit(form, "consignados", "Devolução consignada registrada.", (state) => {
+    const id = value(form, "movementId", 36);
+    if (!uuidPattern.test(id)) throw new RetailError("Atualize a página antes de registrar a devolução.");
+    returnConsignedLot(state, { id, createdAt, purchaseId: value(form, "purchaseId"),
+      productId: value(form, "productId"), store: choice(form, "store", storeIds(state)), quantity: units(form) });
   });
 }
 

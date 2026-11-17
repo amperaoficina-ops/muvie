@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, stockComposition, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, returnConsignedLot, stockComposition, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -227,4 +227,21 @@ test("correção dos encargos atualiza caixa, lucro e comissão a pagar", () => 
   const snapshot = structuredClone(state);
   assert.throws(() => updateSaleCosts(state, input.id, { ...adjustment, commission: 3999 }));
   assert.deepEqual(state, snapshot);
+});
+
+test("devolução consignada baixa apenas o lote escolhido e não gera lançamento financeiro", () => {
+  const state = fixture();
+  for (const id of ["lote-a", "lote-b"]) {
+    recordPurchase(state, { id, productId: "scooter", store: "sao-jose", unitCost: 10000, quantity: 1,
+      supplier: id, date: "2026-11-07", createdAt: date, acquisition: "consignada", openingBalance: true });
+  }
+  const input = { id: "devolucao", purchaseId: "lote-b", productId: "scooter", store: "sao-jose", quantity: 1, createdAt: date };
+  assert.throws(() => returnConsignedLot(state, { ...input, quantity: 2 }));
+  returnConsignedLot(state, input);
+  returnConsignedLot(state, input);
+  assert.equal(state.products[0].stock["sao-jose"], 2);
+  assert.equal(state.stockLots.find((lot) => lot.purchaseId === "lote-a").quantity, 1);
+  assert.equal(state.stockLots.find((lot) => lot.purchaseId === "lote-b").quantity, 0);
+  assert.equal(state.movements.length, 1);
+  assert.equal(state.ledger.length, 0);
 });

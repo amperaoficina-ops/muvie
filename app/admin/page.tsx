@@ -16,7 +16,7 @@ import {
   balanceDue, money, saleNetProfit, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts } from "./actions";
+import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -26,6 +26,7 @@ import { InventoryOverview, InvoiceOverview } from "./inventory-overview";
 import { UnitDialog } from "./unit-dialog";
 import { Submit } from "./submit";
 import { CardSettings, Charts, TestimonialsSettings, UsersPanel } from "./operations";
+import { RecordSearch } from "./record-search";
 import { Simulator } from "./simulator";
 import { Finance, Rankings, reportPeriod, StoresPanel } from "./finance";
 import { isPrimaryAdmin, canAccess } from "@/domain/access";
@@ -166,11 +167,24 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
       {bikeTotal > 0 && <><div className="consignment-bar" aria-hidden="true"><span style={{ width: percent(bikeCount, bikeTotal) + "%" }} /></div>
         <p>Só bicicletas · <strong>{format.format(percent(bikeCount, bikeTotal))}%</strong> consignadas · <strong>{format.format(percent(bikeTotal - bikeCount, bikeTotal))}%</strong> próprias ou sem lote</p></>}
     </div>
-    {detailed && (lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse"]}>
+    {detailed && (lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse", "Ação"]}>
       {lots.map((lot) => <tr key={lot.purchaseId + lot.store}>
         <td>{state.products.find((product) => product.id === lot.productId)?.name ?? lot.productId}</td>
         <td>{storeName(lot.store, state)}</td><td>{lot.supplier}</td><td>{calendarLabel(lot.date)}</td>
         <td>{lot.quantity} un.</td><td>{money(lot.quantity * lot.unitCost)}</td>
+        <td><DetailsDialog id={"devolucao-" + lot.purchaseId + "-" + lot.store} title="Estornar consignado" trigger="Estornar">
+          <form className="admin-form" action={returnConsignment}>
+            <FilterInput filter={filter} />
+            <input type="hidden" name="movementId" value={randomUUID()} />
+            <input type="hidden" name="purchaseId" value={lot.purchaseId} />
+            <input type="hidden" name="productId" value={lot.productId} />
+            <input type="hidden" name="store" value={lot.store} />
+            <p className="span-two">{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId} · {lot.supplier} · {storeName(lot.store, state)}</p>
+            <label>Quantidade devolvida<input name="quantity" type="number" min={1} max={lot.quantity} step={1} defaultValue={1} required /></label>
+            <p className="form-note span-two">Saldo disponível neste lote: {lot.quantity} un. A devolução será registrada no histórico do estoque.</p>
+            <div className="span-two"><Submit variant="danger">Confirmar devolução</Submit></div>
+          </form>
+        </DetailsDialog></td>
       </tr>)}
     </Table> : <Empty>Nenhum lote consignado com saldo nesta seleção.</Empty>)}
   </section>;
@@ -684,15 +698,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
         </div>
-        {!denied && state && supportsSearch && <form action="/admin" className="workspace-section-links admin-record-search" role="search">
-          <input type="hidden" name="tab" value={active.id} />
-          {filter && <input type="hidden" name="loja" value={filter} />}
-          {category && active.id === "estoque" && <input type="hidden" name="categoria" value={category} />}
-          <input type="search" name="busca" maxLength={100} defaultValue={query} key={query} aria-label="Pesquisar registros"
-            placeholder={active.id === "compras" ? "Produto, SKU ou fornecedor" : "Produto, SKU ou categoria"} />
-          <button className="button" type="submit">Pesquisar</button>
-          {query && <Link href={adminUrl(active.id, filter) + categoryQuery}>Limpar busca</Link>}
-        </form>}
+        {!denied && state && supportsSearch && <RecordSearch key={active.id + ":" + filter + ":" + (category ?? "")}
+          tab={active.id} store={filter} category={active.id === "estoque" ? category : undefined} query={query} />}
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
         {state && !invoices && <p className="feedback error" role="alert">Não foi possível carregar os anexos de notas fiscais.</p>}

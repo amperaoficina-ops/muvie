@@ -304,6 +304,20 @@ export function changeStock(
   state.movements.unshift({ id: movementId, store, productId, productName: product.name, quantity, reason, createdAt, reference });
 }
 
+export function returnConsignedLot(state: RetailState, input: {
+  id: string; purchaseId: string; productId: string; store: StoreId; quantity: number; createdAt: string;
+}) {
+  if (state.movements.some((entry) => entry.id === input.id)) return;
+  const lot = state.stockLots.find((item) => item.purchaseId === input.purchaseId && item.productId === input.productId &&
+    item.store === input.store && item.consigned);
+  if (!Number.isSafeInteger(input.quantity) || input.quantity < 1 || !lot || input.quantity > lot.quantity) {
+    throw new RetailError("Informe uma quantidade dentro do saldo consignado deste lote.");
+  }
+  changeStock(state, lot.productId, lot.store, -input.quantity, "Devolução de consignado · " + lot.supplier,
+    input.id, input.createdAt, lot.purchaseId);
+  lot.quantity -= input.quantity;
+}
+
 export function classifyLegacyConsignment(state: RetailState, lot: StockLot) {
   const product = productById(state, lot.productId);
   const tracked = state.stockLots.filter((item) => item.productId === lot.productId && item.store === lot.store)
