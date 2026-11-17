@@ -1,3 +1,4 @@
+import { SearchSelect } from "./search-select";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { balanceDue, businessDate, financialReport, isCalendarDate, money, modelMarginRanking, salesRanking, storeName, storeList,
@@ -204,8 +205,8 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
         <input type="hidden" name="inicio" value={period.from} /><input type="hidden" name="fim" value={period.to} />
         <label>Descrição<input name="name" maxLength={120} required placeholder="Ex.: internet, impostos ou serviço prestado" /></label>
         <label>Unidade<select name="store" defaultValue={filter} required><option value="">Selecione</option>{storeList(state).map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
-        <label>Tipo<select name="direction"><option value="out">A pagar · despesa</option><option value="in">A receber · outra receita</option></select></label>
-        <label>Classificação<select name="classification"><option value="operacional">Operacional · DRE e caixa</option><option value="somente-caixa">Somente caixa · ex.: aporte ou investimento</option></select></label>
+        <label>Tipo<SearchSelect name="direction"><option value="out">A pagar · despesa</option><option value="in">A receber · outra receita</option></SearchSelect></label>
+        <label>Classificação<SearchSelect name="classification"><option value="operacional">Operacional · DRE e caixa</option><option value="somente-caixa">Somente caixa · ex.: aporte ou investimento</option></SearchSelect></label>
         <Currency name="amount" label="Valor (R$)" required />
         <label>Data de competência<input type="date" name="date" defaultValue={today()} required /></label>
         <label>Vencimento<input type="date" name="due" required /></label>

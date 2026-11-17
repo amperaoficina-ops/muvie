@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchSelect } from "./search-select";
 import { useState } from "react";
 import { money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
 import { completePaymentAmounts, parseReais } from "@/domain/money-input";
@@ -65,22 +66,22 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
         setItems(items.map((item) => ({ ...item, productId: "", origin: "", override: "" })));
       }}><option value="">Selecione a unidade</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
     <input type="hidden" name="store" value={store} />
-    <label>Vendedor da unidade<select name="sellerId" value={sellerId} onChange={(event) => setSeller(event.target.value)}>
+    <label>Vendedor da unidade<SearchSelect name="sellerId" value={sellerId} onChange={(event) => setSeller(event.target.value)}>
       <option value="">Sem vendedor</option>{sellers.filter((seller) => seller.store === store).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
-    </select></label>
+    </SearchSelect></label>
     <label>Desconto da venda (R$)<input name="discount" inputMode="decimal" value={discount} onChange={(event) => setDiscount(event.target.value)} placeholder="0,00" /></label>
     <fieldset className="address-fields span-two checkout-group">
       <legend>Produtos e brindes</legend>
       {items.map((item, index) => <div className="checkout-row span-two" key={item.key}>
-        <label>Produto<select name="checkoutProduct" required value={item.productId} onChange={(event) => patchItem(item.key, { productId: event.target.value, origin: "", override: "" })}>
-          <option value="">Selecione</option>{available.filter((product) => item.gift || product.price > 0).map((product) => <option key={product.id} value={product.id}>{product.name} · {money(product.price)} · {product.stock[store]} un.</option>)}</select></label>
+        <label>Produto<SearchSelect name="checkoutProduct" required value={item.productId} onChange={(event) => patchItem(item.key, { productId: event.target.value, origin: "", override: "" })}>
+          <option value="">Selecione</option>{available.filter((product) => item.gift || product.price > 0).map((product) => <option key={product.id} value={product.id}>{product.name} · {money(product.price)} · {product.stock[store]} un.</option>)}</SearchSelect></label>
         <label>Quantidade<input name="checkoutQuantity" type="number" min="1" max="999999" required value={item.quantity || ""} onChange={(event) => patchItem(item.key, { quantity: Number(event.target.value) })} /></label>
-        <label>Tipo<select name="checkoutKind" value={item.gift ? "gift" : "sale"} onChange={(event) => patchItem(item.key, { gift: event.target.value === "gift", productId: "", origin: "", override: "" })}>
-          <option value="sale">Venda</option><option value="gift">Brinde</option></select></label>
-        <label>Lote da compra<select name="checkoutOrigin" required value={item.origin} onChange={(event) => patchItem(item.key, { origin: event.target.value, override: "" })}>
+        <label>Tipo<SearchSelect name="checkoutKind" value={item.gift ? "gift" : "sale"} onChange={(event) => patchItem(item.key, { gift: event.target.value === "gift", productId: "", origin: "", override: "" })}>
+          <option value="sale">Venda</option><option value="gift">Brinde</option></SearchSelect></label>
+        <label>Lote da compra<SearchSelect name="checkoutOrigin" required value={item.origin} onChange={(event) => patchItem(item.key, { origin: event.target.value, override: "" })}>
           <option value="">Selecione o lote</option>
           {availableLots.filter((lot) => lot.productId === item.productId).map((lot) => <option key={lot.purchaseId} value={lot.purchaseId}>{lot.consigned ? "Consignado" : "Próprio"} · {lot.supplier} · {lot.date.split("-").reverse().join("/")} · {lot.quantity} un.{showCost ? " · " + money(lot.unitCost) + "/un." : ""}</option>)}
-        </select></label>
+        </SearchSelect></label>
         {showCost && <label>Ajustar custo unitário (R$)<input name="checkoutCost" inputMode="decimal" maxLength={32} placeholder="Usar custo do lote"
           value={item.override ?? ""} onChange={(event) => patchItem(item.key, { override: event.target.value })} /></label>}
         {item.productId && !availableLots.some((lot) => lot.productId === item.productId) && <p className="form-note span-two">Saldo sem lote. Vincule as unidades antigas a uma compra antes de vender.</p>}
@@ -91,12 +92,12 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
     <fieldset className="address-fields span-two checkout-group">
       <legend>Pagamentos</legend>
       {payments.map((payment, index) => <div className="checkout-row span-two" key={payment.key}>
-        <label>Forma<select name="checkoutMethod" value={payment.method} onChange={(event) => patchPayment(payment.key, { method: paymentMethods.find((item) => item === event.target.value) ?? "Pix" })}>{paymentMethods.map((method) => <option key={method}>{method}</option>)}</select></label>
+        <label>Forma<SearchSelect name="checkoutMethod" value={payment.method} onChange={(event) => patchPayment(payment.key, { method: paymentMethods.find((item) => item === event.target.value) ?? "Pix" })}>{paymentMethods.map((method) => <option key={method}>{method}</option>)}</SearchSelect></label>
         <label>{index === payments.length - 1 ? "Saldo automático (R$)" : "Valor (R$)"}<input name="checkoutAmount" inputMode="decimal" readOnly={index === payments.length - 1} value={amounts[index]} required onChange={(event) => patchPayment(payment.key, { value: event.target.value })} /></label>
-        {payment.method === "Cartão" ? <label>Taxa da maquininha<select name="checkoutRate" required value={payment.rateId} onChange={(event) => patchPayment(payment.key, { rateId: event.target.value })}>
-          <option value="">Selecione</option>{rates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {rate.mode} · {rate.installments}x · {rate.basisPoints / 100}%</option>)}</select></label> : <input type="hidden" name="checkoutRate" value="" />}
-        <label>Recebimento<select name="checkoutStatus" value={payment.received ? "received" : "pending"} onChange={(event) => patchPayment(payment.key, { received: event.target.value === "received" })}>
-          <option value="received">Já recebido</option><option value="pending">A receber</option></select></label>
+        {payment.method === "Cartão" ? <label>Taxa da maquininha<SearchSelect name="checkoutRate" required value={payment.rateId} onChange={(event) => patchPayment(payment.key, { rateId: event.target.value })}>
+          <option value="">Selecione</option>{rates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {rate.mode} · {rate.installments}x · {rate.basisPoints / 100}%</option>)}</SearchSelect></label> : <input type="hidden" name="checkoutRate" value="" />}
+        <label>Recebimento<SearchSelect name="checkoutStatus" value={payment.received ? "received" : "pending"} onChange={(event) => patchPayment(payment.key, { received: event.target.value === "received" })}>
+          <option value="received">Já recebido</option><option value="pending">A receber</option></SearchSelect></label>
         {payment.received ? <input type="hidden" name="checkoutDue" value="" /> : <label>Vencimento<input name="checkoutDue" type="date" required value={payment.due} onChange={(event) => patchPayment(payment.key, { due: event.target.value })} /></label>}
         {index > 0 && <button type="button" className="button danger" onClick={() => setPayments(payments.filter((row) => row.key !== payment.key))}>Remover pagamento</button>}
       </div>)}
@@ -104,11 +105,11 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
     </fieldset>
     <fieldset className="address-fields span-two checkout-group">
       <legend>Imposto da venda</legend>
-      <label>Como calcular<select value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
+      <label>Como calcular<SearchSelect value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
         <option value="">{defaultTax ? "Usar imposto padrão" : "Sem alíquota cadastrada"}</option>
         {taxRates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {(rate.basisPoints / 100).toLocaleString("pt-BR")}%{rate.defaultForSale ? " · padrão" : ""}</option>)}
         <option value="manual">Informar valor manual</option>
-      </select></label>
+      </SearchSelect></label>
       <input type="hidden" name="taxRateId" value={taxMode === "manual" ? "" : taxMode} />
       <input type="hidden" name="taxMode" value={taxMode === "manual" ? "manual" : "rate"} />
       {taxMode === "manual" ? <label>Imposto (R$)<input name="manualTax" inputMode="decimal" required maxLength={32} value={manualTax} onChange={(event) => setManualTax(event.target.value)} /></label>

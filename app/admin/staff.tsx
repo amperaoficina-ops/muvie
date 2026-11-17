@@ -1,3 +1,4 @@
+import { SearchSelect } from "./search-select";
 import { randomUUID } from "node:crypto";
 import { businessDate, money, storeList, storeName, type RetailState } from "@/domain/retail";
 import { saveStaffAdvance } from "./actions";
@@ -45,10 +46,10 @@ export function StaffPanel({ state, filter }: { state: RetailState; filter: stri
       {staff.some((item) => item.active) ? <form className="admin-form" action={saveStaffAdvance}>
         <input type="hidden" name="advanceId" value={randomUUID()} />
         <input type="hidden" name="filter" value={filter} />
-        <label>Funcionário<select name="staffId" required defaultValue="">
+        <label>Funcionário<SearchSelect name="staffId" required defaultValue="">
           <option value="" disabled>Selecione</option>
           {staff.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name} · {storeName(item.store, state)}</option>)}
-        </select></label>
+        </SearchSelect></label>
         <label>Valor (R$)<input name="amount" type="number" min=".01" max="99999999.99" step=".01" required /></label>
         <label>Data de emissão<input name="date" type="date" defaultValue={today} max={today} required /></label>
         <label>Observação<input name="notes" maxLength={300} /></label>

@@ -1,19 +1,21 @@
 "use client";
 
+import { SearchSelect } from "./search-select";
 import { useState } from "react";
 
 export function SaleCustomer({ contacts }: { contacts: { id: string; label: string }[] }) {
-  const [mode, setMode] = useState("new");
+  const [mode, setMode] = useState("walk-in");
   return <fieldset className="address-fields span-two">
     <legend>Cliente</legend>
-    <label>Como identificar o cliente<select name="customerMode" value={mode} onChange={(event) => setMode(event.target.value)}>
-      <option value="new">Cadastrar novo cliente nesta venda</option>
+    <label>Como identificar o cliente<SearchSelect name="customerMode" value={mode} onChange={(event) => setMode(event.target.value)}>
+      <option value="walk-in">Informar nome na venda</option>
       <option value="existing" disabled={!contacts.length}>Vincular cliente cadastrado</option>
-    </select></label>
-    {mode === "existing" ? <label>Cliente cadastrado<select name="contactId" required defaultValue="">
+      <option value="new">Cadastrar novo cliente nesta venda</option>
+    </SearchSelect></label>
+    {mode === "existing" ? <label>Cliente cadastrado<SearchSelect name="contactId" required defaultValue="">
       <option value="" disabled>Selecione um cliente</option>
       {contacts.map((contact) => <option value={contact.id} key={contact.id}>{contact.label}</option>)}
-    </select></label> : <label>Nome do cliente<input name="customer" required maxLength={100} /></label>}
+    </SearchSelect></label> : <label>Nome do cliente<input name="customer" required maxLength={100} /></label>}
     {mode === "new" && <>
       <label>Telefone<input name="phone" type="tel" maxLength={32} /></label>
       <label>E-mail<input name="email" type="email" maxLength={254} /></label>

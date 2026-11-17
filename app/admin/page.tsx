@@ -1,3 +1,4 @@
+import { SearchSelect } from "./search-select";
 import { TaxSettings } from "./tax-settings";
 import { CheckoutFields } from "./checkout-fields";
 import { CreateDialog, DetailsDialog } from "./sale-dialog";
@@ -84,7 +85,7 @@ function StoreField({ filter, units, label = "Unidade" }: { filter: Filter; unit
 }
 
 function ProductField({ products }: { products: Product[] }) {
-  return <label>Produto<select name="productId" defaultValue="" required><option value="" disabled>Selecione um produto</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</select></label>;
+  return <label>Produto<SearchSelect name="productId" defaultValue="" required><option value="" disabled>Selecione um produto</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</SearchSelect></label>;
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
@@ -110,7 +111,7 @@ function InvoiceBox({ owner, id, filter, invoices }: { owner: InvoiceOwner; id: 
       <input type="hidden" name="owner" value={owner} />
       <input type="hidden" name="ownerId" value={id} />
       <input type="hidden" name="focus" value={id} />
-      {owner === "client" && <label>Tipo de nota<select name="kind"><option>Venda</option><option>Compra</option></select></label>}
+      {owner === "client" && <label>Tipo de nota<SearchSelect name="kind"><option>Venda</option><option>Compra</option></SearchSelect></label>}
       <AttachmentPicker name="invoice" label="Selecionar documento" accept=".pdf,.xml" hint="PDF ou XML · até 8 MB" required />
       <div><Submit>Anexar nota fiscal</Submit></div>
     </form>
@@ -270,8 +271,8 @@ function Products({ products, filter, query, focus, error, category }: { product
   </>;
 }
 
-function Purchases({ state, filter, invoices, focus, productId, query, category, error }: {
-  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; productId?: string; query: string; category?: Product["category"]; error?: string;
+function Purchases({ state, filter, invoices, focus, productId, query, category, error, canCreateProduct }: {
+  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; productId?: string; query: string; category?: Product["category"]; error?: string; canCreateProduct: boolean;
 }) {
   const productCategoriesById = new Map(state.products.map((item) => [item.id, item.category]));
   const purchases = state.purchases.filter((purchase) => (!filter || purchase.store === filter) && (!category || productCategoriesById.get(purchase.productId) === category) && matchesSearch(query, purchase.productName, purchase.sku, purchase.supplier));
@@ -321,21 +322,21 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
     </section>
     <CreateDialog id="registrar-compra" title="Registrar compra" reopen={Boolean(error && !focusedPurchase)}>
       {error && !focusedPurchase && <p className="feedback error" role="alert">{error}</p>}
-      {state.products.length ? <form action={savePurchase} className="admin-form">
+      {(state.products.length > 0 || canCreateProduct) ? <form action={savePurchase} className="admin-form">
         <FilterInput filter={filter} />
         <input type="hidden" name="purchaseId" value={purchaseId} />
         <input type="hidden" name="focus" value={purchaseId} />
-        <PurchaseProductFields initialId={product?.id} products={state.products.map(({ id, name, sku, category, specs }) => ({ id, name, sku, category, specs }))} />
+        <PurchaseProductFields canCreate={canCreateProduct} initialId={product?.id} products={state.products.map(({ id, name, sku, category, specs }) => ({ id, name, sku, category, specs }))} />
         <StoreField units={storeList(state)} filter={filter} label="Unidade que recebe o estoque" />
         <label>Fornecedor<input name="supplier" maxLength={100} placeholder="Nome ou razão social" /></label>
-        <label>Cliente vinculado (opcional)<select name="contactId"><option value="">Sem vínculo</option>{state.contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store, state)}</option>)}</select></label>
+        <label>Cliente vinculado (opcional)<SearchSelect name="contactId"><option value="">Sem vínculo</option>{state.contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store, state)}</option>)}</SearchSelect></label>
         <label>Quantidade<input name="quantity" type="number" min="1" max="999999" defaultValue="1" required /></label>
 
         <label>Data da compra<input name="date" type="date" defaultValue={new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date())} required /></label>
         <label>Número da nota (opcional)<input name="invoiceNumber" maxLength={44} /></label>
-        <label>Condição da compra<select name="acquisition" defaultValue="" required>
+        <label>Condição da compra<SearchSelect name="acquisition" defaultValue="" required>
           <option value="" disabled>Selecione a condição</option><option value="quitada">Já quitada</option><option value="a-pagar">A pagar</option><option value="consignada">Consignada</option>
-        </select></label>
+        </SearchSelect></label>
         <label>Vencimento (se a pagar)<input name="due" type="date" /></label>
         <label className="span-two">Observações<textarea name="notes" rows={2} maxLength={500} /></label>
         <label className="checkbox span-two"><input name="openingBalance" type="checkbox" /> Vincular esta compra a unidades antigas que já estão no estoque</label>
@@ -628,7 +629,7 @@ function ContactForm({ filter, contact, state }: { filter: Filter; contact?: Con
       <label>Cidade<input name="city" maxLength={80} defaultValue={contact?.address?.city} /></label>
       <label>UF<input name="uf" maxLength={2} defaultValue={contact?.address?.state} placeholder="SC" /></label>
     </fieldset>
-    <label>Etapa<select name="stage" defaultValue={contact?.stage ?? stages[0]}>{stages.map((stage) => <option key={stage}>{stage}</option>)}</select></label>
+    <label>Etapa<SearchSelect name="stage" defaultValue={contact?.stage ?? stages[0]}>{stages.map((stage) => <option key={stage}>{stage}</option>)}</SearchSelect></label>
     <label>Interesse<input name="interest" maxLength={100} defaultValue={contact?.interest} placeholder="Modelo ou necessidade" /></label>
     <label>Próximo retorno<input name="nextContact" type="date" defaultValue={contact?.nextContact} /></label>
     <label className="span-two">Observações<textarea name="notes" rows={2} maxLength={500} defaultValue={contact?.notes} /></label>
@@ -803,7 +804,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
-          {active.id === "compras" && <Purchases category={category} error={params.erro} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
+          {active.id === "compras" && <Purchases canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}

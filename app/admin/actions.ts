@@ -276,21 +276,37 @@ export async function saveSale(form: FormData) {
 
 export async function savePurchase(form: FormData) {
   const createdAt = new Date().toISOString();
-  await commit(form, "compras", "Compra registrada e estoque atualizado.", (state) => {
-    const id = value(form, "purchaseId", 36);
-    if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário de compra.");
-    const date = value(form, "date", 10);
-    if (!isCalendarDate(date) || date > localToday()) throw new RetailError("Informe uma data de compra válida, até hoje.");
-    const productId = value(form, "productId");
-    const product = state.products.find((item) => item.id === productId);
-    recordPurchase(state, {
-      id, date, createdAt, openingBalance: form.get("openingBalance") === "on", store: choice(form, "store", storeIds(state)), productId,
-      ...(product?.category === scooterCategory && { specs: readScooterSpecs(form) }),
-      supplier: value(form, "supplier", 100, false), contactId: value(form, "contactId", 36, false),
-      quantity: units(form), unitCost: amount(form, "unitCost"),
-      invoiceNumber: value(form, "invoiceNumber", 44, false), notes: value(form, "notes", 500, false),
-      acquisition: form.has("acquisition") ? choice(form, "acquisition", acquisitionTypes) : undefined,
-      due: value(form, "due", 10, false),
+  await runAction(form, "compras", "Compra registrada e estoque atualizado.", async (user) => {
+    await editWithAudit(user, "Compra registrada e estoque atualizado.", (state) => {
+      const id = value(form, "purchaseId", 36);
+      if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário de compra.");
+      const date = value(form, "date", 10);
+      if (!isCalendarDate(date) || date > localToday()) throw new RetailError("Informe uma data de compra válida, até hoje.");
+      if (state.purchases.some((purchase) => purchase.id === id)) return;
+      let productId = value(form, "productId");
+      if (productId === "new") {
+        if (!canAccess(user, "produtos")) throw new RetailError("Sua conta não tem acesso ao cadastro de produtos.");
+        if (form.get("openingBalance") === "on") throw new RetailError("Para um produto novo, registre uma entrada normal.");
+        const sku = value(form, "sku", 40).toUpperCase();
+        if (state.products.some((item) => item.sku === sku)) throw new RetailError("Já existe um produto com este SKU. Selecione-o na compra.");
+        const category = choice(form, "category", productCategories);
+        productId = randomUUID();
+        state.products.push({
+          id: productId, sku, name: value(form, "name", 100), category, price: amount(form, "price"),
+          specs: category === scooterCategory ? readScooterSpecs(form) : null,
+          description: "", imageUrl: "", published: false, stock: {},
+        });
+      }
+      const product = state.products.find((item) => item.id === productId);
+      recordPurchase(state, {
+        id, date, createdAt, openingBalance: form.get("openingBalance") === "on", store: choice(form, "store", storeIds(state)), productId,
+        ...(product?.category === scooterCategory && { specs: readScooterSpecs(form) }),
+        supplier: value(form, "supplier", 100, false), contactId: value(form, "contactId", 36, false),
+        quantity: units(form), unitCost: amount(form, "unitCost"),
+        invoiceNumber: value(form, "invoiceNumber", 44, false), notes: value(form, "notes", 500, false),
+        acquisition: form.has("acquisition") ? choice(form, "acquisition", acquisitionTypes) : undefined,
+        due: value(form, "due", 10, false),
+      });
     });
   });
 }

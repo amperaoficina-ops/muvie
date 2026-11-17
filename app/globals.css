@@ -495,3 +495,12 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 
 .admin-record-search { align-items: center; }
 .admin-record-search input[type="search"] { flex: 1 1 220px; width: auto; max-width: 420px; }
+
+.search-select { position: relative; display: block; min-width: 0; }
+.search-select .search-select-value { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+.search-select-trigger { display: flex; justify-content: space-between; align-items: center; gap: .5rem; width: 100%; min-height: 42px; padding: .55rem .65rem; border: 1px solid #a9b3c0; border-radius: 7px; background: #fff; color: #17191f; text-align: left; font-size: .9rem; font-weight: 400; }
+.search-select-trigger > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-select-menu { display: grid; position: absolute; z-index: 4; top: calc(100% + 4px); inset-inline: 0; min-width: min(100%, 180px); gap: .4rem; padding: .45rem; background: #fff; border: 1px solid #a9b3c0; border-radius: 8px; box-shadow: 0 8px 24px #16181e22; }
+.search-select-options { display: grid; max-height: 200px; overflow-y: auto; overscroll-behavior: contain; }
+.search-select-options button, .search-select-empty { text-align: left; padding: .55rem; font-weight: 400; overflow-wrap: anywhere; }
+.search-select-options button:is(:hover, :focus-visible, [aria-pressed="true"]) { background: #fff3c2; }

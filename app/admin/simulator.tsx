@@ -1,5 +1,6 @@
 "use client";
 
+import { SearchSelect } from "./search-select";
 import "./simulator.css";
 import { useState } from "react";
 import { money, paymentMethods, percentageAmount, type Store, type CardRate, type TaxRate, type StockLot, type Staff } from "@/domain/retail";
@@ -52,10 +53,10 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
         <label>Nome do cliente (opcional)<input value={customer} maxLength={100} onChange={(event) => setCustomer(event.target.value)} /></label>
         <fieldset className="address-fields span-two checkout-group"><legend>Produtos</legend>
           {items.map((item, index) => <div className="checkout-row span-two" key={index}>
-            <label>Produto <select value={item.productId} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, productId: event.target.value } : row))}>
+            <label>Produto <SearchSelect value={item.productId} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, productId: event.target.value } : row))}>
               <option value="">{available.length ? "Selecione um produto" : "Sem produtos disponíveis"}</option>
               {available.map((row) => <option value={row.id} key={row.id}>{row.name} · {money(row.price)} · {row.stock[store]} un.</option>)}
-            </select></label>
+            </SearchSelect></label>
             <label>Quantidade<input type="number" min="1" value={item.quantity} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, quantity: event.target.value } : row))} /></label>
             {items.length > 1 && <button type="button" className="button danger" onClick={() => setItems(items.filter((_, i) => i !== index))}>Remover produto</button>}
           </div>)}
@@ -64,14 +65,14 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
         <label className="span-two">Desconto (R$)<input value={discount} inputMode="decimal" placeholder="0,00" onChange={(event) => setDiscount(event.target.value)} /></label>
         <fieldset className="address-fields span-two checkout-group"><legend>Pagamento</legend>
           {payments.map((payment, index) => <div className="checkout-row span-two" key={index}>
-            <label>Forma de pagamento<select value={payment.method} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, method: event.target.value } : row))}>
+            <label>Forma de pagamento<SearchSelect value={payment.method} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, method: event.target.value } : row))}>
               {paymentMethods.map((method) => <option key={method}>{method}</option>)}
-            </select></label>
+            </SearchSelect></label>
             {payments.length > 1 && <label>{index === payments.length - 1 ? "Saldo automático (R$)" : "Valor (R$)"}<input value={amounts[index]} readOnly={index === payments.length - 1} inputMode="decimal" onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, amount: event.target.value } : row))} /></label>}
-            {payment.method === "Cartão" && <label>Condição de cartão<select value={payment.rateId} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, rateId: event.target.value } : row))}>
+            {payment.method === "Cartão" && <label>Condição de cartão<SearchSelect value={payment.rateId} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, rateId: event.target.value } : row))}>
               {!rates.length && <option value="">Nenhuma taxa cadastrada</option>}
               {rates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.mode} · {item.installments}×</option>)}
-            </select></label>}
+            </SearchSelect></label>}
             {payments.length > 1 && <button type="button" className="button danger" onClick={() => setPayments(payments.filter((_, i) => i !== index))}>Remover pagamento</button>}
           </div>)}
           {base && payments.length > 1 && <p className="form-note span-two">
@@ -81,15 +82,15 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
           <button type="button" className="button" disabled={payments.length >= 10} onClick={() => setPayments([...payments, { method: "Pix", amount: "", rateId: rates[0]?.id ?? "" }])}>Combinar pagamento</button>
         </fieldset>
         {showFinance && <>
-          <label>Vendedor (opcional)<select value={sellerId} onChange={(event) => setSellerId(event.target.value)}>
+          <label>Vendedor (opcional)<SearchSelect value={sellerId} onChange={(event) => setSellerId(event.target.value)}>
             <option value="">Sem vendedor</option>
             {sellers.filter((seller) => seller.store === store).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
-          </select></label>
-          <label>Imposto<select value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
+          </SearchSelect></label>
+          <label>Imposto<SearchSelect value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
             <option value="">Padrão da venda</option>
             {taxRates.map((item) => <option value={item.id} key={item.id}>{item.name} · {item.basisPoints / 100}%</option>)}
             <option value="manual">Valor manual</option>
-          </select></label>
+          </SearchSelect></label>
           {taxMode === "manual" && <label>Imposto (R$)<input inputMode="decimal" value={manualTax} onChange={(event) => setManualTax(event.target.value)} /></label>}
         </>}
       </div>

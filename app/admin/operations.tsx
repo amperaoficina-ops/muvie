@@ -1,3 +1,4 @@
+import { SearchSelect } from "./search-select";
 import { money, storeList, type CardRate, type RetailState, type StoreId } from "@/domain/retail";
 import { saveRate, saveTestimonial, saveUser } from "./actions";
 import { Submit } from "./submit";
@@ -20,7 +21,7 @@ function RateForm({ rate }: { rate?: CardRate }) {
   return <form className="admin-form" action={saveRate}>
     <input type="hidden" name="id" value={rate?.id ?? ""} />
     <label className="span-two">Nome da condição<input name="name" defaultValue={rate?.name} maxLength={70} placeholder="Ex.: Maquininha A · Visa" required /></label>
-    <label>Modalidade<select name="mode" defaultValue={rate?.mode ?? "Crédito"}><option>Crédito</option><option>Débito</option></select></label>
+    <label>Modalidade<SearchSelect name="mode" defaultValue={rate?.mode ?? "Crédito"}><option>Crédito</option><option>Débito</option></SearchSelect></label>
     <label>Parcelas<input name="installments" type="number" min="1" max="24" defaultValue={rate?.installments ?? 1} required /></label>
     <label>Taxa total (%)<input name="percent" type="number" min="0" max="99.99" step=".01" defaultValue={rate ? rate.basisPoints / 100 : ""} required /></label>
     <div className="span-two"><Submit>Salvar taxa</Submit></div>
