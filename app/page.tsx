@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const { products, testimonials } = await readCatalog();
-  return <div className="site">
+  return <div className="site landing-page">
     <SiteHeader />
     <main>
       <section className="site-wrap hero">

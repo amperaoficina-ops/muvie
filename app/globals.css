@@ -34,6 +34,7 @@ h1, h2, h3, p, figure { margin: 0; }
 
 /* Loja */
 .site { background: var(--dark); color: #f5f5eb; }
+.landing-page, .landing-page .signal-bar, .landing-page .stores-band { background: #000; }
 .site-wrap { width: min(100% - 80px, 1320px); margin-inline: auto; }
 .site-header { border-bottom: 1px solid var(--line); }
 .site-nav { min-height: 79px; display: flex; align-items: center; justify-content: space-between; gap: 1.4rem; }
