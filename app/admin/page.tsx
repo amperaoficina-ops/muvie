@@ -16,9 +16,9 @@ import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoice
 import { readRetail } from "@/lib/retail-store";
 import {
   balanceDue, isCalendarDate, money, saleNetProfit, tradeInAssets, productCategories, stages, stockComposition, storeName, storeList,
-  type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
+  type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale } from "./actions";
+import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -59,7 +59,6 @@ type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
   { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "compromissos", "taxas", "impostos", "usuarios", "logs"] },
-  { title: "Lojas", tabs: ["lojas"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
 const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
@@ -111,7 +110,7 @@ function InvoiceLinks({ invoices }: { invoices: InvoiceMeta[] }) {
 
 function InvoiceBox({ owner, id, filter, invoices }: { owner: InvoiceOwner; id: string; filter: Filter; invoices: InvoiceMeta[] }) {
   return <section className="invoice-box" aria-label="Notas fiscais">
-    <h3>Notas fiscais</h3>
+    <h3>{owner === "asset" ? "Comprovantes fiscais" : "Notas fiscais"}</h3>
     <InvoiceLinks invoices={invoices.filter((invoice) => invoice.owner === owner && invoice.ownerId === id)} />
     <form action={attachInvoice} className="invoice-form">
       <FilterInput filter={filter} />
@@ -120,7 +119,7 @@ function InvoiceBox({ owner, id, filter, invoices }: { owner: InvoiceOwner; id: 
       <input type="hidden" name="focus" value={id} />
       {owner === "client" && <label>Tipo de nota<SearchSelect name="kind"><option>Venda</option><option>Compra</option></SearchSelect></label>}
       <AttachmentPicker name="invoice" label="Selecionar documento" accept=".pdf,.xml" hint="PDF ou XML · até 8 MB" required />
-      <div><Submit>Anexar nota fiscal</Submit></div>
+      <div><Submit>{owner === "asset" ? "Anexar comprovante" : "Anexar nota fiscal"}</Submit></div>
     </form>
   </section>;
 }
@@ -360,7 +359,22 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
   </>;
 }
 
-function CompanyAssets({ state, filter, showSales }: { state: RetailState; filter: Filter; showSales: boolean }) {
+function StructureAssetForm({ state, filter, asset }: { state: RetailState; filter: Filter; asset?: Asset }) {
+  return <form className="admin-form" action={saveStoreItem}>
+    <FilterInput filter={filter} />
+    <input type="hidden" name="assetPage" value="1" /><input type="hidden" name="kind" value="asset" />
+    {asset && <><input type="hidden" name="id" value={asset.id} /><input type="hidden" name="focus" value={asset.id} /></>}
+    <label>Nome do bem<input name="name" required maxLength={100} defaultValue={asset?.name} /></label>
+    <StoreField units={storeList(state)} filter={asset?.store ?? filter} />
+    <label>Quantidade<input name="quantity" type="number" min={1} max={999999} defaultValue={asset?.quantity ?? 1} required /></label>
+    <label>Valor total de aquisição (R$)<input name="amount" inputMode="decimal" maxLength={32} defaultValue={asset ? (asset.amount / 100).toFixed(2).replace(".", ",") : ""} /></label>
+    <label>Data de aquisição<input name="acquiredOn" type="date" defaultValue={asset?.acquiredOn} required={!asset} /></label>
+    <label className="span-two">Localização ou observações<textarea name="notes" maxLength={500} rows={3} defaultValue={asset?.notes} /></label>
+    <div className="span-two"><Submit>Salvar bem</Submit></div>
+  </form>;
+}
+
+function CompanyAssets({ state, filter, showSales, invoices, focus, error, success }: { state: RetailState; filter: Filter; showSales: boolean; invoices: InvoiceMeta[]; focus?: string; error?: string; success?: string }) {
   const assets = tradeInAssets(state, filter || undefined);
   const tradeIns = assets.filter((item) => !item.resale);
   const sold = assets.filter((item) => item.resale);
@@ -403,10 +417,22 @@ function CompanyAssets({ state, filter, showSales }: { state: RetailState; filte
       </Table>
     </section>}
     <section className="panel">
-      <div className="panel-title"><h2>Estrutura das lojas</h2></div>
-      {structure.length ? <Table headers={["Bem", "Unidade", "Quantidade", "Valor de aquisição"]}>
+      <div className="panel-title"><h2>Estrutura das lojas</h2><a className="button yellow" href="#novo-bem">＋ Adicionar novo bem</a></div>
+      <CreateDialog id="novo-bem" title="Adicionar bem de estrutura" reopen={Boolean(error && !focus)}>
+        {error && !focus && <p className="feedback error" role="alert">{error}</p>}
+        <StructureAssetForm state={state} filter={filter} />
+      </CreateDialog>
+      {structure.length ? <Table headers={["Bem", "Unidade", "Quantidade", "Valor de aquisição", "Data de aquisição", "Ação"]}>
         {structure.map((item) => <tr key={item.id}>
           <td><strong>{item.name}</strong></td><td>{storeName(item.store, state)}</td><td>{item.quantity}</td><td>{money(item.amount)}</td>
+          <td>{item.acquiredOn ? calendarLabel(item.acquiredOn) : "Não informada"}</td>
+          <td><DetailsDialog id={"bem-" + item.id} title={item.name} trigger="Ver detalhes e editar" reopen={focus === item.id}>
+            <div className="sale-detail-content">
+              {focus === item.id && (error || success) && <p className={"feedback " + (error ? "error" : "success")} role={error ? "alert" : "status"}>{error || success}</p>}
+              <section className="sale-detail-card"><h3>Dados do bem</h3><StructureAssetForm state={state} filter={filter} asset={item} /></section>
+              <InvoiceBox owner="asset" id={item.id} filter={filter} invoices={invoices} />
+            </div>
+          </DetailsDialog></td>
         </tr>)}
       </Table> : <Empty>Nenhum bem de estrutura nesta seleção.</Empty>}
     </section>
@@ -828,7 +854,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     ...(paidTo ? { baixaFim: paidTo } : {}),
   }) : "";
   const periodQuery = active.id === "financeiro" || active.id === "visao" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to }) : "";
-  const showInvoices = ["compras", "vendas", "crm"].includes(active.id) || (active.id === "visao" && (showSales || showPurchases));
+  const showInvoices = ["compras", "vendas", "crm", "bens"].includes(active.id) || (active.id === "visao" && (showSales || showPurchases));
   const [state, invoices, users] = await Promise.all([
     denied ? null : readRetail().catch(() => null),
     !denied && showInvoices ? listInvoices().catch(() => null) : [],
@@ -849,7 +875,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const searchQuery = query ? "&" + new URLSearchParams({ busca: query }) : "";
   const heading = active.id === "lojas" && filter ? "Unidade " + storeName(filter, state ?? undefined) : active.label;
 
-  const group = navGroups.find(({ tabs }) => tabs.includes(active.id))?.title;
+  const group = navGroups.find(({ tabs }) => tabs.includes(active.id))?.title ?? (active.id === "lojas" ? "Lojas" : undefined);
   const primary = moduleActions[active.id];
   const actionBesideUnits = active.id === "crm" || active.id === "estoque" || active.id === "compras" || active.id === "funcionarios";
   const shortcuts = [
@@ -925,7 +951,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
-          {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} />}
+          {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} invoices={invoices ?? []} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}

@@ -4,7 +4,7 @@ import { Binary } from "mongodb";
 import { RetailError } from "@/domain/retail";
 import { getMongoDb } from "./mongodb";
 
-export const invoiceOwners = ["purchase", "sale", "client"] as const;
+export const invoiceOwners = ["purchase", "sale", "client", "asset"] as const;
 export type InvoiceOwner = typeof invoiceOwners[number];
 export const invoiceKinds = ["Compra", "Venda"] as const;
 type InvoiceKind = typeof invoiceKinds[number];

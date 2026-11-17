@@ -10,7 +10,7 @@ import {
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
-import { accessFor, canAccess, isPrimaryAdmin, moduleKeys, roles, type Module, type Role } from "@/domain/access";
+import { accessFor, canAccess, isPrimaryAdmin, moduleKeys, roles, invoiceModule, type Module, type Role } from "@/domain/access";
 import { getMongoDb } from "@/lib/mongodb";
 import { hashPassword } from "@/lib/security";
 import { storeProductPhoto } from "@/lib/product-photos";
@@ -405,15 +405,15 @@ export async function savePurchase(form: FormData) {
 
 export async function attachInvoice(form: FormData) {
   const owner = form.get("owner");
-  const tab = owner === "purchase" ? "compras" : owner === "sale" ? "vendas" : "crm";
+  const tab = invoiceModule[invoiceOwners.find((item) => item === owner) ?? "client"];
   await runAction(form, tab, "Nota fiscal anexada.", async (user) => {
     const type = choice(form, "owner", invoiceOwners);
     const ownerId = value(form, "ownerId", 36);
-    const kind = type === "purchase" ? "Compra" : type === "sale" ? "Venda" : choice(form, "kind", invoiceKinds);
+    const kind = type === "purchase" || type === "asset" ? "Compra" : type === "sale" ? "Venda" : choice(form, "kind", invoiceKinds);
     const file = form.get("invoice");
     if (!(file instanceof File)) throw new RetailError("Selecione um arquivo em PDF ou XML.");
     const state = await readRetail();
-    const owners = type === "purchase" ? state.purchases : type === "sale" ? state.sales : state.contacts;
+    const owners = type === "purchase" ? state.purchases : type === "sale" ? state.sales : type === "asset" ? state.assets : state.contacts;
     if (!owners.some((item) => item.id === ownerId)) throw new RetailError("O registro da nota fiscal não foi encontrado.");
     await storeInvoice(type, ownerId, kind, file);
     await editWithAudit(user, "Nota fiscal anexada (" + kind + ").", () => {});
@@ -433,10 +433,11 @@ function requiredDate(form: FormData, key: string, allowFuture = false) {
 
 export async function saveStoreItem(form: FormData) {
   const newId = randomUUID();
-  const tab = form.get("staffPage") === "1" ? "funcionarios" : "lojas";
+  const tab = form.get("assetPage") === "1" ? "bens" : form.get("staffPage") === "1" ? "funcionarios" : "lojas";
   await commit(form, tab, "Cadastro da unidade atualizado.", (state) => {
     const store = choice(form, "store", storeIds(state));
     const kind = choice(form, "kind", ["staff", "fixed", "asset"]);
+    if (tab === "bens" && kind !== "asset") throw new RetailError("Selecione um bem de estrutura.");
     if (tab === "funcionarios" && kind !== "staff") throw new RetailError("Selecione um cadastro de funcionário.");
     const id = value(form, "id", 36, false);
     const fields = { id: id || newId, store, name: value(form, "name", 100) };
@@ -458,8 +459,11 @@ export async function saveStoreItem(form: FormData) {
       if (existing) Object.assign(existing, item);
       else state.fixedCosts.push(item);
     } else {
-      const item = { ...fields, quantity: units(form), amount: amount(form, "amount"), notes: value(form, "notes", 500, false) };
-      const existing = state.assets.find((row) => row.id === id && row.store === store);
+      const acquiredOn = tab === "bens" ? value(form, "acquiredOn", 10, !id) : "";
+      if (acquiredOn && (!isCalendarDate(acquiredOn) || acquiredOn > localToday())) throw new RetailError("Informe uma data de aquisição válida, até hoje.");
+      const item = { ...fields, quantity: units(form), amount: amount(form, "amount"), notes: value(form, "notes", 500, false),
+        ...(acquiredOn ? { acquiredOn } : {}) };
+      const existing = state.assets.find((row) => row.id === id && (tab === "bens" || row.store === store));
       if (id && !existing) throw new RetailError("Item de estrutura não encontrado nesta unidade.");
       if (existing) Object.assign(existing, item);
       else state.assets.push(item);

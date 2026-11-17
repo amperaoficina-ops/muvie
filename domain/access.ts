@@ -32,4 +32,4 @@ export function accessFor(account: AccountAccess, role = account.role ?? "admin"
 }
 
 export const canAccess = (account: AccountAccess, module: Module) => accessFor(account).includes(module);
-export const invoiceModule = { purchase: "compras", sale: "vendas", client: "crm" } as const;
+export const invoiceModule = { purchase: "compras", sale: "vendas", client: "crm", asset: "bens" } as const;

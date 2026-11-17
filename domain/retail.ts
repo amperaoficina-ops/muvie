@@ -11,7 +11,7 @@ export type Acquisition = typeof acquisitionTypes[number];
 export type Staff = { id: string; name: string; store: StoreId; job: string; salary: number; commissionBps: number; active: boolean };
 export type StaffAdvance = { id: string; staffId: string; store: StoreId; date: string; amount: number; notes: string };
 export type FixedCost = { id: string; name: string; store: StoreId; amount: number; day: number; active: boolean };
-export type Asset = { id: string; name: string; store: StoreId; quantity: number; amount: number; notes: string };
+export type Asset = { acquiredOn?: string; id: string; name: string; store: StoreId; quantity: number; amount: number; notes: string };
 export type LedgerEntry = {
   id: string; store: StoreId; name: string; direction: "in" | "out";
   kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste";
