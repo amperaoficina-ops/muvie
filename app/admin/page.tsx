@@ -62,6 +62,7 @@ const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
 const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
+  taxas: { label: "Cadastrar maquininha", target: "nova-maquininha" },
   funcionarios: { label: "Cadastrar funcionário", target: "novo-funcionario" },
   fornecedores: { label: "Novo fornecedor", target: "novo-fornecedor" },
   estoque: { label: "Movimentar estoque", target: "movimentar-estoque" },
@@ -870,8 +871,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
-          {!denied && state && primary && !actionBesideUnits && active.id !== "produtos" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
-          {!denied && state && active.id === "produtos" && primary && <div className="admin-filter-bar">
+          {!denied && state && primary && !actionBesideUnits && active.id !== "produtos" && active.id !== "taxas" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
+          {!denied && state && (active.id === "produtos" || active.id === "taxas") && primary && <div className="admin-filter-bar">
             <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
           </div>}
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
@@ -917,7 +918,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}
             sellers={canAccess(user, "financeiro") ? state.staff.filter((seller) => seller.active).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps })) : []}
             products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))} />}
-          {active.id === "taxas" && <CardSettings state={state} machineId={params.maquininha} error={params.erro} />}
+          {active.id === "taxas" && <CardSettings canManage={user.role === "admin" || isPrimaryAdmin(user)} state={state} machineId={params.maquininha} error={params.erro} />}
           {active.id === "impostos" && <TaxSettings rates={state.taxRates ?? []} />}
           {active.id === "relatos" && <TestimonialsSettings state={state} />}
           {active.id === "usuarios" && (users ? <UsersPanel users={users} actor={user} /> : <p role="alert">Não foi possível carregar os usuários.</p>)}

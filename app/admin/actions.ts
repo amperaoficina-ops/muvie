@@ -149,6 +149,30 @@ export async function saveCardMachine(form: FormData) {
   });
 }
 
+export async function manageCardMachine(form: FormData) {
+  const remove = form.get("operation") === "delete";
+  const message = remove ? "Maquininha excluída." : "Nome da maquininha atualizado.";
+  await runAction(form, "taxas", message, async (user) => {
+    if (user.role !== "admin" && !isPrimaryAdmin(user)) throw new RetailError("Somente a Diretoria pode editar ou excluir maquininhas.");
+    await editWithAudit(user, message, (state) => {
+      const id = value(form, "machineId", 36);
+      const machine = state.cardMachines.find((item) => item.id === id);
+      if (!machine) throw new RetailError("Maquininha não encontrada.");
+      if (remove) {
+        if (form.get("confirmed") !== "on") throw new RetailError("Confirme a exclusão da maquininha e das taxas.");
+        state.cardMachines = state.cardMachines.filter((item) => item.id !== id);
+        state.cardRates = state.cardRates.filter((rate) => rate.machineId !== id);
+        return;
+      }
+      const name = value(form, "name", 70);
+      if (state.cardMachines.some((item) => item.id !== id && item.name.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
+        throw new RetailError("Já existe uma maquininha com esse nome.");
+      }
+      machine.name = name;
+    });
+  });
+}
+
 export async function saveRate(form: FormData) {
   const newId = randomUUID();
   await commit(form, "taxas", "Taxa de cartão salva.", (state) => {
@@ -164,7 +188,7 @@ export async function saveRate(form: FormData) {
     const basisPoints = amount(form, "percent");
     if (basisPoints >= 10000) throw new RetailError("Informe uma taxa inferior a 100%.");
     const machine = value(form, "machineId", 36);
-    const legacy = machine === legacyCardMachine && current && !current.machineId;
+    const legacy = machine === legacyCardMachine && (!current || !current.machineId);
     if (!legacy && !state.cardMachines.some((item) => item.id === machine)) throw new RetailError("Selecione uma maquininha cadastrada.");
     const fields = { name: value(form, "name", 70), mode, installments, basisPoints, machineId: legacy ? undefined : machine };
     if (current) Object.assign(current, fields);

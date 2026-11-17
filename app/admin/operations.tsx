@@ -2,19 +2,16 @@ import Link from "next/link";
 import { CreateDialog, DetailsDialog } from "./sale-dialog";
 import { SearchSelect } from "./search-select";
 import { money, storeList, cardMachineOptions, legacyCardMachine, rateMachineId, type CardMachine, type CardRate, type RetailState, type StoreId } from "@/domain/retail";
-import { saveCardMachine, saveRate, saveTestimonial, saveUser } from "./actions";
+import { manageCardMachine, saveCardMachine, saveRate, saveTestimonial, saveUser } from "./actions";
 import { Submit } from "./submit";
 import { isPrimaryAdmin, roles, type AccountAccess } from "@/domain/access";
 import { AccessFields } from "./access-fields";
 
-export function CardSettings({ state, machineId, error }: { state: RetailState; machineId?: string; error?: string }) {
+export function CardSettings({ state, machineId, error, canManage }: { state: RetailState; machineId?: string; error?: string; canManage: boolean }) {
   const machines = cardMachineOptions(state.cardMachines, state.cardRates);
   const selected = machines.find((item) => item.id === machineId) ?? machines[0];
   const rates = state.cardRates.filter((rate) => rateMachineId(rate) === selected?.id);
   return <>
-    <div className="workspace-section-links">
-      <a className="button yellow" href="#nova-maquininha">＋ Cadastrar maquininha</a>
-    </div>
     <CreateDialog id="nova-maquininha" title="Cadastrar maquininha" reopen={false}>
       <form action={saveCardMachine} className="admin-form">
         <label className="span-two">Nome<input name="name" required maxLength={70} placeholder="Ex.: Itaú, Rendimento ou InfinitePay" /></label>
@@ -28,11 +25,25 @@ export function CardSettings({ state, machineId, error }: { state: RetailState; 
       </nav>
       <section className="panel">
         <div className="panel-title"><h2>{selected.name}</h2>
-          {selected.id !== legacyCardMachine && <a className="button yellow" href="#nova-taxa">＋ Adicionar taxa</a>}
+          <div className="workspace-section-links">
+            <a className="button yellow" href="#nova-taxa">＋ Adicionar taxa</a>
+            {canManage && selected.id !== legacyCardMachine && <DetailsDialog key={selected.id} id={"maquininha-" + selected.id} title={selected.name} trigger="Editar maquininha">
+              <form action={manageCardMachine} className="admin-form">
+                <input type="hidden" name="machineId" value={selected.id} />
+                <label className="span-two">Nome<input name="name" defaultValue={selected.name} required maxLength={70} /></label>
+                <div className="span-two"><Submit>Salvar nome</Submit></div>
+              </form>
+              <form action={manageCardMachine} className="admin-form">
+                <input type="hidden" name="machineId" value={selected.id} /><input type="hidden" name="operation" value="delete" />
+                <label className="checkbox span-two"><input type="checkbox" name="confirmed" required /> Confirmo a exclusão da maquininha e das taxas cadastradas nela.</label>
+                <div className="span-two"><Submit variant="danger">Excluir maquininha</Submit></div>
+              </form>
+            </DetailsDialog>}
+          </div>
         </div>
-        {selected.id !== legacyCardMachine && <CreateDialog id="nova-taxa" title={"Adicionar taxa · " + selected.name} reopen={false}>
+        <CreateDialog id="nova-taxa" title={"Adicionar taxa · " + selected.name} reopen={false}>
           <RateForm machine={selected} machines={machines} />
-        </CreateDialog>}
+        </CreateDialog>
         {rates.length ? <div className="table-wrap"><table>
           <thead><tr>{["Condição", "Modalidade", "Parcelas", "Taxa", "Ação"].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
           <tbody>{rates.map((rate) => <tr key={rate.id}>
