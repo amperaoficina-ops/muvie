@@ -229,12 +229,22 @@ function matchesSearch(query: string, ...fields: string[]) {
   return !query || searchText(fields.join(" ")).includes(searchText(query));
 }
 
-function Products({ products, filter, query, focus, error }: { products: Product[]; filter: Filter; query: string; focus?: string; error?: string }) {
+function CategoryFilters({ tab, filter, category, query }: { tab: "estoque" | "produtos"; filter: Filter; category?: Product["category"]; query: string }) {
+  return <nav className="stock-category-filter" aria-label="Filtrar por categoria">
+      {[undefined, ...productCategories].map((item) => <Link key={item ?? "all"} aria-current={item === category ? "true" : undefined}
+        href={adminUrl(tab, filter) + "&" + new URLSearchParams({ ...(item ? { categoria: item } : {}), ...(query ? { busca: query } : {}) })}>
+        {item ?? "Todas as categorias"}
+      </Link>)}
+    </nav>;
+}
+
+function Products({ products, filter, query, focus, error, category }: { products: Product[]; filter: Filter; query: string; focus?: string; error?: string; category?: Product["category"] }) {
   return <>
     <CreateDialog id="novo-produto" title="Novo produto" reopen={Boolean(error && !focus)}>
       {error && !focus && <p className="feedback error" role="alert">{error}</p>}
       <ProductForm filter={filter} />
     </CreateDialog>
+    <CategoryFilters tab="produtos" filter={filter} category={category} query={query} />
     <section className="panel">
       <div className="panel-title"><h2>Produtos cadastrados</h2><span className="pill">{products.length} produto(s)</span></div>
       {products.length ? <Table headers={["Produto", "Categoria", "Preço de venda", "Status", "Ação"]}>
@@ -250,7 +260,7 @@ function Products({ products, filter, query, focus, error }: { products: Product
             </div>
           </DetailsDialog></td>
         </tr>)}
-      </Table> : <Empty>{query ? "Nenhum produto encontrado." : "Cadastre seu primeiro produto para liberar movimentações e vendas."}</Empty>}
+      </Table> : <Empty>{query || category ? "Nenhum produto encontrado." : "Cadastre seu primeiro produto para liberar movimentações e vendas."}</Empty>}
     </section>
   </>;
 }
@@ -364,12 +374,7 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
     return adminUrl("estoque", filter) + (params.size ? "&" + params : "") + "#" + section;
   };
   return <>
-    <nav className="stock-category-filter" aria-label="Categoria de estoque">
-      {[undefined, ...productCategories].map((item) => <Link key={item ?? "all"} aria-current={item === category ? "true" : undefined}
-        href={adminUrl("estoque", filter) + "&" + new URLSearchParams({ ...(item ? { categoria: item } : {}), ...(query ? { busca: query } : {}) })}>
-        {item ?? "Todas as categorias"}
-      </Link>)}
-    </nav>
+    <CategoryFilters tab="estoque" filter={filter} category={category} query={query} />
     <section id="movimentar-estoque" className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
       {products.length ? <form action={updateStock} className="admin-form">
         <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><ProductField products={products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
@@ -738,7 +743,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           </nav></div></div>}
         </div>
         {!denied && state && supportsSearch && active.id !== "estoque" && active.id !== "crm" && <RecordSearch key={active.id + ":" + filter + ":" + (category ?? "")}
-          tab={active.id} store={filter} query={query} />}
+          tab={active.id} store={filter} category={active.id === "produtos" ? category : undefined} query={query} />}
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
         {state && !invoices && <p className="feedback error" role="alert">Não foi possível carregar os anexos de notas fiscais.</p>}
@@ -755,7 +760,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {(canAccess(user, "estoque") || canAccess(user, "consignados")) && <InventoryOverview state={state} filter={filter} showCost={canAccess(user, "financeiro") || showPurchases} />}
             {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}
           </>}
-          {active.id === "produtos" && <Products focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
+          {active.id === "produtos" && <Products category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings state={state} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <>
