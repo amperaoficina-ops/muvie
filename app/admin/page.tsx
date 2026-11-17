@@ -637,12 +637,14 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
-          {!denied && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
+          {!denied && state && primary && active.id !== "crm" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
-          {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <div className="admin-filter-bar"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
+          {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <div className={"admin-filter-bar" + (active.id === "crm" ? " crm-filter-bar" : "")}>
+            {active.id === "crm" && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
+            <div className="unit-filter"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery}>Todas</Link>
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery} key={store.id}>{store.name}</Link>)}
-          </nav></div>}
+          </nav></div></div>}
         </div>
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}

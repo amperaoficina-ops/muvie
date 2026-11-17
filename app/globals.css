@@ -488,3 +488,7 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 .catalog-empty p { max-width: 38ch; }
 @media (max-width: 850px) { .public-footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 430px) { .public-footer-grid { grid-template-columns: 1fr; gap: 1.4rem; } }
+
+.admin-filter-bar .unit-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .8rem; }
+.crm-filter-bar .unit-filter { margin-inline-start: auto; }
+@media (max-width: 560px) { .crm-filter-bar .unit-filter { margin-inline-start: 0; } }
