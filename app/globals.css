@@ -322,10 +322,14 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .admin-shell .panel-title h2 { letter-spacing: -.015em; }
 .admin-shell .admin-form { gap: 1rem; padding: 1.15rem; }
 .admin-shell :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]), select, textarea) {
-  background: #edf0f4;
+  background-color: #dce1e8;
   color: #181b23;
-  border-color: #b9c1ce;
+  border-color: #798596;
   border-radius: 8px;
+}
+.admin-shell :is(.address-fields, .scooter-fields) {
+  background-color: #f3f5f7;
+  border-color: #a9b3c0;
 }
 .admin-shell :is(input, textarea)::placeholder { color: #525d6e; opacity: 1; }
 .admin-shell :is(input:not([type="file"]), select, textarea):focus-visible {
