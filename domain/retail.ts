@@ -1,5 +1,11 @@
-import type { ProductColor } from "./product-colors";
 import type { ScooterSpecs } from "./scooter";
+
+export const productColors = [
+  "Vermelho", "Laranja", "Amarelo", "Verde", "Azul", "Anil", "Violeta",
+  "Branco", "Preto", "Cinza", "Prata", "Marrom", "Bege", "Rosa", "Carbono", "Verde militar",
+] as const;
+
+export type ProductColor = typeof productColors[number];
 
 export const stores = [
   { id: "sao-jose", name: "São José", code: "SJ" },
@@ -14,7 +20,7 @@ export type StaffAdvance = { id: string; staffId: string; store: StoreId; date: 
 export type FixedCost = { id: string; name: string; store: StoreId; amount: number; day: number; active: boolean };
 export type Asset = { acquiredOn?: string; id: string; name: string; store: StoreId; quantity: number; amount: number; notes: string };
 export type LedgerEntry = {
-  id: string; store: StoreId; name: string; beneficiary?: string; direction: "in" | "out";
+  id: string; store: StoreId; name: string; beneficiary?: string; beneficiaryEmail?: string; direction: "in" | "out";
   kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste" | "distribuicao-lucro";
   amount: number; date: string; due: string; saleId?: string; cardFee?: number; nonCash?: boolean; canceled?: boolean; manual?: boolean;
   frequency?: "monthly" | "standalone";
@@ -311,7 +317,7 @@ export function financialReport(state: RetailState, from: string, to: string, st
 }
 
 export function recordProfitDistribution(state: RetailState, input: {
-  id: string; store: StoreId; beneficiary: string; amount: number; date: string;
+  id: string; store: StoreId; beneficiary: string; beneficiaryEmail?: string; amount: number; date: string;
 }) {
   if (state.ledger.some((item) => item.id === input.id)) return;
   if (!Number.isSafeInteger(input.amount) || input.amount <= 0 || !input.beneficiary.trim() || !isCalendarDate(input.date)) {
@@ -743,9 +749,8 @@ export function productColorStock(lots: StockLot[]) {
 }
 
 export function productColorAvailability(product: Product, lots: StockLot[]) {
-  const inventory = lots.filter((lot) => lot.productId === product.id && lot.color);
-  const colors = [...new Set([...(product.colors ?? []), ...inventory.map((lot) => lot.color!)])];
-  return colors.map((color) => ({ color, available: inventory.some((lot) => lot.color === color && lot.quantity > 0) }));
+  const available = new Set(lots.filter((lot) => lot.productId === product.id && lot.color && lot.quantity > 0).map((lot) => lot.color));
+  return productColors.map((color) => ({ color, available: available.has(color) }));
 }
 
 export function updatePurchaseCost(state: RetailState, id: string, unitCost: number) {

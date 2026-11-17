@@ -326,11 +326,11 @@ test("cor acompanha lote transferido, venda, disponibilidade e devolução ao es
   assert.equal(state.stockLots.find((lot) => lot.store === "palhoca").color, "Carbono");
   recordCheckout(state, { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "carbono" }],
     payments: [{ method: "Pix", amount: 589900, received: true, due: "" }] });
-  const availability = () => productColorAvailability(state.products[0], state.stockLots).map((item) => item.available);
-  assert.deepEqual(availability(), [false, false]);
+  const availability = () => productColorAvailability(state.products[0], state.stockLots).filter((item) => item.available).map((item) => item.color);
+  assert.deepEqual(availability(), []);
   assert.equal(state.sales[0].lines[0].color, "Carbono");
   cancelSale(state, input.id, date, true);
-  assert.deepEqual(availability(), [true, false]);
+  assert.deepEqual(availability(), ["Carbono"]);
 });
 
 test("distribuição de lucro aparece por unidade e período, sem reduzir o resultado operacional", () => {

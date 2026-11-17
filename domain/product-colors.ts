@@ -1,9 +1,5 @@
-export const productColors = [
-  "Vermelho", "Laranja", "Amarelo", "Verde", "Azul", "Anil", "Violeta",
-  "Branco", "Preto", "Cinza", "Prata", "Marrom", "Bege", "Rosa", "Carbono", "Verde militar",
-] as const;
-
-export type ProductColor = typeof productColors[number];
+import type { ProductColor } from "./retail";
+export { productColors, type ProductColor } from "./retail";
 
 export const productColorHex: Record<ProductColor, string> = {
   Vermelho: "#DE303A", Laranja: "#F47B24", Amarelo: "#FFD332", Verde: "#28A653",

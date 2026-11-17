@@ -36,23 +36,3 @@ export function LotColorFields({ total = 1, initial, editing = false }: {
         { id: Math.max(...rows.map((row) => row.id)) + 1, color: "", quantity: "" }])}>＋ Adicionar cor</button>
   </fieldset>;
 }
-
-export function ProductColorsField({ initial = [] }: { initial?: ProductColor[] }) {
-  const [colors, setColors] = useState(initial);
-  return <fieldset className="address-fields span-two">
-    <legend>Cores do produto</legend>
-    <label className="span-two">Adicionar uma cor<SearchSelect value="" onChange={(event) => {
-      const color = productColors.find((item) => item === event.target.value);
-      if (color && !colors.includes(color)) setColors([...colors, color]);
-    }}>
-      <option value="" disabled>Pesquisar e selecionar cor</option>
-      {productColors.filter((color) => !colors.includes(color)).map((color) => <option key={color}>{color}</option>)}
-    </SearchSelect></label>
-    <div className="inventory-tags span-two">
-      {colors.map((color) => <span className="pill" key={color}>
-        <input type="hidden" name="productColor" value={color} />
-        <button type="button" aria-label={"Remover " + color} onClick={() => setColors(colors.filter((item) => item !== color))}>{color} ×</button>
-      </span>)}
-    </div>
-  </fieldset>;
-}

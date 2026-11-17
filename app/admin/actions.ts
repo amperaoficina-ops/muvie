@@ -11,7 +11,7 @@ import {
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
-import { accessFor, canAccess, isPrimaryAdmin, moduleKeys, roles, invoiceModule, type Module, type Role } from "@/domain/access";
+import { accessFor, canAccess, isDirector, isPrimaryAdmin, moduleKeys, roles, invoiceModule, type Module, type Role } from "@/domain/access";
 import { getMongoDb } from "@/lib/mongodb";
 import { hashPassword } from "@/lib/security";
 import { storeProductPhoto } from "@/lib/product-photos";
@@ -158,7 +158,6 @@ export async function saveProduct(form: FormData) {
     const category = choice(form, "category", productCategories);
     const fields = {
       sku, name: value(form, "name", 100), category,
-      colors: productColors.filter((color) => form.getAll("productColor").includes(color)),
       specs: category === scooterCategory ? { ...readScooterSpecs(form), ...(current?.specs?.colors ? { colors: current.specs.colors } : {}) } : null,
       price: amount(form, "price"),
       purchaseCost: current?.purchaseCost ?? null,
@@ -409,7 +408,7 @@ export async function savePurchase(form: FormData) {
         const category = choice(form, "category", productCategories);
         productId = randomUUID();
         state.products.push({
-          id: productId, colors: productColors.filter((color) => lotColors.some((row) => row.color === color)), sku, name: value(form, "name", 100), category, price: amount(form, "price"),
+          id: productId, sku, name: value(form, "name", 100), category, price: amount(form, "price"),
           specs: category === scooterCategory ? readScooterSpecs(form) : null,
           description: "", imageUrl: "", published: false, stock: {},
         });
@@ -529,12 +528,18 @@ export async function launchMonth(form: FormData) {
 }
 
 export async function saveProfitDistribution(form: FormData) {
-  await commit(form, "distribuicoes", "Distribuição de lucro registrada.", (state) => {
+  await runAction(form, "distribuicoes", "Distribuição de lucro registrada.", async (actor) => {
     const id = value(form, "entryId", 36);
     if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário.");
-    recordProfitDistribution(state, {
-      id, store: choice(form, "store", storeIds(state)), beneficiary: value(form, "beneficiary", 120),
-      amount: amount(form, "amount"), date: requiredDate(form, "date"),
+    const email = value(form, "beneficiaryEmail", 254);
+    const db = await getMongoDb();
+    const recipient = await db.collection<User>("users").findOne({ email }, { projection: { name: 1, role: 1, managed: 1, disabled: 1 } });
+    if (!recipient || recipient.disabled || !isDirector(recipient)) throw new RetailError("Selecione um usuário ativo da Diretoria.");
+    await editWithAudit(actor, "Distribuição de lucro registrada.", (state) => {
+      recordProfitDistribution(state, {
+        id, store: choice(form, "store", storeIds(state)), beneficiary: recipient.name, beneficiaryEmail: email,
+        amount: amount(form, "amount"), date: requiredDate(form, "date"),
+      });
     });
   });
 }

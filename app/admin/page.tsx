@@ -1,4 +1,4 @@
-import { LotColorFields, ProductColorsField } from "./product-color-fields";
+import { LotColorFields } from "./product-color-fields";
 import { ModelCard } from "../catalog";
 import { SupplierField } from "./supplier-field";
 import { SearchSelect } from "./search-select";
@@ -33,7 +33,7 @@ import { CardSettings, Charts, TestimonialsSettings, UsersPanel } from "./operat
 import { RecordSearch } from "./record-search";
 import { Simulator } from "./simulator";
 import { Commitments, Finance, Rankings, reportPeriod, StoresPanel } from "./finance";
-import { isPrimaryAdmin, canAccess } from "@/domain/access";
+import { isDirector, isPrimaryAdmin, canAccess } from "@/domain/access";
 
 const nav = [
   { id: "visao", label: "Visão geral", icon: "grid", description: "Acompanhe o estoque, as vendas e os atendimentos das suas lojas." },
@@ -200,13 +200,13 @@ function CatalogSettings({ state, showProducts, requestedPage }: { state: Retail
     {vehicles.length ? <Table headers={["Modelo", "Publicação", "Dados a completar", "Ações"]}>
       {vehicles.slice(page.start, page.start + stockPageSize).map((product) => {
         const missing = [
-          ...(!productColorAvailability(product, state.stockLots).length ? ["Cores"] : []),
+          ...(!state.stockLots.some((lot) => lot.productId === product.id && lot.color) ? ["Cores no estoque"] : []),
           ...(!product.imageUrl ? ["Foto"] : []), ...(!product.description?.trim() ? ["Descrição"] : []),
           ...(!product.price || product.sku.startsWith("DEMO-") ? ["Preço de venda"] : []),
           ...scooterFields.filter(({ key }) => key !== "colors" && !product.specs?.[key]?.trim()).map(({ label }) => label),
         ];
         return <tr key={product.id}>
-          <td><strong>{product.name}</strong><small>{product.sku}</small>{product.colors?.length ? <small>{product.colors.join(" · ")}</small> : null}</td>
+          <td><strong>{product.name}</strong><small>{product.sku}</small></td>
           <td><span className={"pill " + (product.published ? "green" : "")}>{product.published ? "Publicado" : "Oculto"}</span></td>
           <td><div className="inventory-tags">
             {missing.length ? missing.map((label) => <span className="pill" key={label}>{label}</span>) : <span className="pill green">Dados completos</span>}
@@ -239,7 +239,6 @@ function ProductForm({ filter, product }: { filter: Filter; product?: Product })
     <label>Nome<input name="name" required maxLength={100} defaultValue={product?.name} placeholder="Nome comercial" /></label>
     <label>SKU<input name="sku" required maxLength={40} defaultValue={product?.sku} placeholder="Código do produto" /></label>
     </ProductCategoryFields>
-    <ProductColorsField initial={product?.colors} />
     <label>Preço de venda (R$)<input name="price" inputMode="decimal" maxLength={32} defaultValue={product ? (product.price / 100).toFixed(2).replace(".", ",") : ""} placeholder="0,00" /></label>
     {product?.imageUrl && <div className="product-photo-preview span-two">
       <Image src={product.imageUrl} alt={product.name} width={96} height={72} unoptimized />
@@ -472,7 +471,7 @@ function CompanyAssets({ state, filter, showSales, invoices, focus, error, succe
   </>;
 }
 
-function ProfitDistributions({ state, filter, error }: { state: RetailState; filter: Filter; error?: string }) {
+function ProfitDistributions({ state, filter, error, directors }: { state: RetailState; filter: Filter; error?: string; directors: Pick<User, "name" | "email">[] | null }) {
   const rows = state.ledger.filter((item) => item.kind === "distribuicao-lucro" && !item.canceled && (!filter || filter === item.store))
     .sort((a, b) => b.date.localeCompare(a.date));
   const entryId = randomUUID();
@@ -482,7 +481,11 @@ function ProfitDistributions({ state, filter, error }: { state: RetailState; fil
       <form action={saveProfitDistribution} className="admin-form">
         <FilterInput filter={filter} /><input type="hidden" name="entryId" value={entryId} />
         <StoreField units={storeList(state)} filter={filter} label="Unidade de origem" />
-        <label>Quem recebeu<input name="beneficiary" required maxLength={120} /></label>
+        <label>Quem recebeu<SearchSelect name="beneficiaryEmail" defaultValue="" required>
+          <option value="" disabled>Selecione um usuário da Diretoria</option>
+          {directors?.map((director) => <option key={director.email} value={director.email}>{director.name} · {director.email}</option>)}
+        </SearchSelect></label>
+        {!directors?.length && <p className="form-note span-two">{directors ? "Nenhum usuário ativo da Diretoria." : "Não foi possível carregar a Diretoria."}</p>}
         <label>Valor distribuído (R$)<input name="amount" required inputMode="decimal" maxLength={32} /></label>
         <label>Data da distribuição<input name="date" type="date" required /></label>
         <div className="span-two"><Submit>Registrar distribuição</Submit></div>
@@ -922,7 +925,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const [state, invoices, users] = await Promise.all([
     denied ? null : readRetail().catch(() => null),
     !denied && showInvoices ? listInvoices().catch(() => null) : [],
-    !denied && active.id === "usuarios" ? getMongoDb().then((db) => db.collection<User>("users").find({}, {
+    !denied && (active.id === "usuarios" || active.id === "distribuicoes") ? getMongoDb().then((db) => db.collection<User>("users").find({}, {
       projection: { _id: 0, name: 1, email: 1, role: 1, disabled: 1, managed: 1, permissions: 1 },
     }).sort({ name: 1 }).toArray()).catch(() => null) : [],
   ]);
@@ -1016,7 +1019,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
-          {active.id === "distribuicoes" && <ProfitDistributions state={state} filter={filter} error={params.erro} />}
+          {active.id === "distribuicoes" && <ProfitDistributions directors={users?.filter((item) => !item.disabled && isDirector(item)) ?? null} state={state} filter={filter} error={params.erro} />}
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} invoices={invoices ?? []} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}

@@ -25,6 +25,10 @@ export function isPrimaryAdmin(account: AccountAccess) {
   return !account.managed && (!account.role || account.role === "admin");
 }
 
+export function isDirector(account: AccountAccess) {
+  return account.role === "admin" || isPrimaryAdmin(account);
+}
+
 export function accessFor(account: AccountAccess, role = account.role ?? "admin"): Module[] {
   if (isPrimaryAdmin(account)) return [...moduleKeys];
   const chosen = Array.isArray(account.permissions) ? account.permissions : defaults[role] ?? [];
