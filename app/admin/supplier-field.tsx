@@ -13,6 +13,11 @@ export function SupplierField({ suppliers }: { suppliers: Pick<Supplier, "id" | 
       {suppliers.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map((supplier) =>
         <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
     </SearchSelect></label>
-    {selected === "new" && <label>Nome do novo fornecedor<input name="supplierName" maxLength={100} required /></label>}
+    {selected === "new" && <fieldset className="address-fields span-two">
+      <legend>Novo fornecedor</legend>
+      <label className="span-two">Nome ou razão social<input name="supplierName" maxLength={100} required /></label>
+      <label>CNPJ<input name="supplierCnpj" maxLength={24} placeholder="00.000.000/0000-00" /></label>
+      <label>Localização<input name="supplierLocation" maxLength={180} placeholder="Endereço, cidade e UF" /></label>
+    </fieldset>}
   </>;
 }

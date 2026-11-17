@@ -47,7 +47,7 @@ export type Contact = {
   address?: { postalCode: string; street: string; number: string; complement: string; neighborhood: string; city: string; state: string };
   createdAt: string;
 };
-export type Supplier = { id: string; name: string; phone?: string; email?: string; notes?: string };
+export type Supplier = { id: string; name: string; cnpj?: string; location?: string; phone?: string; email?: string; notes?: string };
 
 export type Purchase = {
   supplierId?: string;

@@ -309,6 +309,7 @@ export async function saveSupplier(form: FormData) {
   await commit(form, "fornecedores", "Fornecedor salvo.", (state) => {
     const id = value(form, "id", 36, false);
     saveSupplierRecord(state, { id: id || newId, name: value(form, "name", 100),
+      cnpj: value(form, "cnpj", 24, false), location: value(form, "location", 180, false),
       phone: value(form, "phone", 32, false), email: value(form, "email", 254, false),
       notes: value(form, "notes", 500, false) }, Boolean(id));
   });
@@ -339,7 +340,8 @@ export async function savePurchase(form: FormData) {
       }
       const supplierChoice = value(form, "supplierId", 36, false);
       const supplier = supplierChoice === "new"
-        ? saveSupplierRecord(state, { id: randomUUID(), name: value(form, "supplierName", 100) })
+        ? saveSupplierRecord(state, { id: randomUUID(), name: value(form, "supplierName", 100),
+          cnpj: value(form, "supplierCnpj", 24, false), location: value(form, "supplierLocation", 180, false) })
         : state.suppliers.find((item) => item.id === supplierChoice);
       if (supplierChoice && !supplier) throw new RetailError("Selecione um fornecedor cadastrado.");
       const product = state.products.find((item) => item.id === productId);

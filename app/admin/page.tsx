@@ -415,6 +415,8 @@ function SupplierForm({ supplier }: { supplier?: Supplier }) {
   return <form className="admin-form" action={saveSupplier}>
     {supplier && <><input type="hidden" name="id" value={supplier.id} /><input type="hidden" name="focus" value={supplier.id} /></>}
     <label className="span-two">Nome ou razão social<input name="name" defaultValue={supplier?.name} required maxLength={100} /></label>
+    <label>CNPJ<input name="cnpj" defaultValue={supplier?.cnpj} maxLength={24} placeholder="00.000.000/0000-00" /></label>
+    <label>Localização<input name="location" defaultValue={supplier?.location} maxLength={180} placeholder="Endereço, cidade e UF" /></label>
     <label>Telefone<input name="phone" type="tel" defaultValue={supplier?.phone} maxLength={32} /></label>
     <label>E-mail<input name="email" type="email" defaultValue={supplier?.email} maxLength={254} /></label>
     <label className="span-two">Observações<textarea name="notes" defaultValue={supplier?.notes} maxLength={500} rows={3} /></label>
@@ -430,9 +432,9 @@ function Suppliers({ suppliers, focus, error, success }: { suppliers: Supplier[]
     </CreateDialog>
     <section className="panel">
       <div className="panel-title"><h2>Fornecedores cadastrados</h2><span className="pill">{suppliers.length}</span></div>
-      {suppliers.length ? <Table headers={["Fornecedor", "Telefone", "E-mail", "Ação"]}>
+      {suppliers.length ? <Table headers={["Fornecedor", "CNPJ", "Localização", "Telefone", "E-mail", "Ação"]}>
         {suppliers.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map((supplier) => <tr key={supplier.id}>
-          <td><strong>{supplier.name}</strong></td><td>{supplier.phone || "—"}</td><td>{supplier.email || "—"}</td>
+          <td><strong>{supplier.name}</strong></td><td>{supplier.cnpj || "—"}</td><td>{supplier.location || "—"}</td><td>{supplier.phone || "—"}</td><td>{supplier.email || "—"}</td>
           <td><DetailsDialog id={"fornecedor-" + supplier.id} title={supplier.name} reopen={focus === supplier.id}>
             {focus === supplier.id && (error || success) && <p className={"feedback " + (error ? "error" : "success")} role={error ? "alert" : "status"}>{error || success}</p>}
             <SupplierForm supplier={supplier} />
