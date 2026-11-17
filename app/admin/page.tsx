@@ -1,6 +1,6 @@
 import { TaxSettings } from "./tax-settings";
 import { CheckoutFields } from "./checkout-fields";
-import { SaleDetailsDialog, SaleDialog } from "./sale-dialog";
+import { CreateDialog, SaleDetailsDialog } from "./sale-dialog";
 import { AttachmentPicker } from "./attachment-picker";
 import { MobileMenu } from "./mobile-menu";
 import { randomUUID } from "node:crypto";
@@ -466,7 +466,7 @@ function Sales({ state, filter, invoices, focus, error, showCost, canEditCosts, 
   const products = state.products.filter((product) => product.price > 0 && (filter ? product.stock[filter] > 0 : storeList(state).some((store) => product.stock[store.id] > 0)));
   const saleId = randomUUID();
   return <div className="sales-workspace">
-    <SaleDialog key={saleId} reopen={Boolean(error)}>
+    <CreateDialog id="nova-venda" title="Nova venda" key={saleId} reopen={Boolean(error)}>
       {error && <p className="feedback error" role="alert">{error}</p>}
       {products.length ? <form className="admin-form" action={saveSale}>
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
@@ -478,7 +478,7 @@ function Sales({ state, filter, invoices, focus, error, showCost, canEditCosts, 
           lots={state.stockLots.map((lot) => ({ ...lot, unitCost: showCost ? lot.unitCost : 0 }))} />
         <div className="span-two"><Submit>Registrar venda</Submit></div>
       </form> : <Empty>Para registrar uma venda, cadastre um produto com preço e adicione saldo à unidade em <Link href={adminUrl("estoque", filter)}>Estoque</Link>.</Empty>}
-    </SaleDialog>
+    </CreateDialog>
     <section className="panel sale-follow-up">
       <div className="panel-title"><h2>Acompanhamento de vendas</h2></div>
       <nav className="dashboard-values sale-filters" aria-label="Filtros de vendas">
@@ -523,22 +523,34 @@ function ContactForm({ filter, contact, state }: { filter: Filter; contact?: Con
   </form>;
 }
 
-function CRM({ state, filter, invoices, focus, showSales, showPurchases }: {
-  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; showSales: boolean; showPurchases: boolean;
+function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, error }: {
+  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; showSales: boolean; showPurchases: boolean; stage?: string; error?: string;
 }) {
   const list = state.contacts.filter((contact) => !filter || contact.store === filter);
+  const selected = stages.find((item) => item === stage);
+  const visible = selected ? list.filter((item) => item.stage === selected) : list;
   return <>
-    <div className="pipeline">{stages.map((stage) => <article className="panel" key={stage}><p>{stage}</p><strong>{list.filter((item) => item.stage === stage).length}</strong></article>)}</div>
-    <div className="operation-grid"><section className="panel"><div className="panel-title"><h2>Clientes e oportunidades</h2></div>
-      {list.length ? <div className="editable-list">{list.map((contact) => <details key={contact.id} open={focus === contact.id}>
+    <CreateDialog id="novo-cliente" title="Novo cliente" reopen={Boolean(error && !focus)}>
+      {error && !focus && <p className="feedback error" role="alert">{error}</p>}
+      <ContactForm state={state} filter={filter} />
+    </CreateDialog>
+    <nav className="dashboard-values sale-filters" aria-label="Filtrar clientes por etapa">
+      {[{ label: "Todos", value: "" }, ...stages.map((item) => ({ label: item, value: item }))].map(({ label, value }) =>
+        <Link key={label} href={adminUrl("crm", filter) + (value ? "&etapa=" + encodeURIComponent(value) : "")}
+          aria-current={(selected ?? "") === value ? "true" : undefined}>
+          <span>{label}</span><strong>{value ? list.filter((item) => item.stage === value).length : list.length}</strong>
+        </Link>)}
+    </nav>
+    <section className="panel"><div className="panel-title"><h2>Clientes e oportunidades</h2></div>
+      {visible.length ? <div className="editable-list" key={selected ?? "todos"}>{visible.map((contact) => <details key={contact.id} name="crm-client" open={focus === contact.id}>
         <summary><span><strong>{contact.name}</strong><small>{storeName(contact.store, state)}{contact.interest ? " · " + contact.interest : ""}{contact.nextContact ? " · Retorno " + contact.nextContact.split("-").reverse().join("/") : ""}</small></span><span className="pill">{contact.stage}</span></summary>
         <ContactForm state={state} filter={filter} contact={contact} />
         <InvoiceBox owner="client" id={contact.id} filter={filter} invoices={invoices} />
         {(showSales || showPurchases) && <section className="invoice-box"><h3>Histórico vinculado</h3>
           <ClientHistory state={state} contact={contact} invoices={invoices} showSales={showSales} showPurchases={showPurchases} />
         </section>}
-      </details>)}</div> : <Empty>Adicione um contato para acompanhar a próxima conversa ou proposta.</Empty>}
-    </section><section id="novo-cliente" className="panel"><div className="panel-title"><h2>Novo cliente</h2></div><ContactForm state={state} filter={filter} /></section></div>
+      </details>)}</div> : <Empty>{selected ? "Nenhum cliente nesta etapa." : "Adicione um contato para acompanhar a próxima conversa ou proposta."}</Empty>}
+    </section>
   </>;
 }
 
@@ -563,7 +575,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; etapa?: string; inicio?: string; fim?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -664,7 +676,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
-          {active.id === "crm" && <CRM state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
+          {active.id === "crm" && <CRM stage={params.etapa} error={params.erro} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
             products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))} />}
           {active.id === "taxas" && <CardSettings state={state} />}
