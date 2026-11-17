@@ -979,7 +979,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 
   const group = navGroups.find(({ tabs }) => tabs.includes(active.id))?.title ?? (active.id === "lojas" ? "Lojas" : undefined);
   const primary = moduleActions[active.id];
-  const actionBesideUnits = active.id === "crm" || active.id === "estoque" || active.id === "compras" || active.id === "funcionarios" || active.id === "distribuicoes";
+  const actionBesideUnits = active.id === "vendas" || active.id === "crm" || active.id === "estoque" || active.id === "compras" || active.id === "funcionarios" || active.id === "distribuicoes";
+  const actionBelowTitle = ["produtos", "taxas", "fornecedores", "compromissos"].includes(active.id);
   const shortcuts = [
     ["vendas", "Nova venda", "Registrar cliente, produtos e pagamento"],
     ["compras", "Registrar compra", "Lançar fornecedor e entrada de produtos"],
@@ -1012,8 +1013,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
-          {!denied && state && primary && !actionBesideUnits && active.id !== "produtos" && active.id !== "taxas" && active.id !== "compromissos" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
-          {!denied && state && (active.id === "produtos" || active.id === "taxas") && primary && <div className="admin-filter-bar">
+          {!denied && state && primary && !actionBesideUnits && !actionBelowTitle && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
+          {!denied && state && actionBelowTitle && active.id !== "compromissos" && primary && <div className="admin-filter-bar">
             <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
           </div>}
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
