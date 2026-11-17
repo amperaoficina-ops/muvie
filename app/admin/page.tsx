@@ -297,8 +297,8 @@ function Products({ products, filter, query, focus, error, category }: { product
   </>;
 }
 
-function Purchases({ state, filter, invoices, focus, productId, query, category, error, canCreateProduct, canCancel }: {
-  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; productId?: string; query: string; category?: Product["category"]; error?: string; canCreateProduct: boolean; canCancel: boolean;
+function Purchases({ state, filter, invoices, focus, productId, query, category, error, success, canCreateProduct, canCancel }: {
+  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; productId?: string; query: string; category?: Product["category"]; error?: string; success?: string; canCreateProduct: boolean; canCancel: boolean;
 }) {
   const productCategoriesById = new Map(state.products.map((item) => [item.id, item.category]));
   const purchases = state.purchases.filter((purchase) => (!filter || purchase.store === filter) && (!category || productCategoriesById.get(purchase.productId) === category) && matchesSearch(query, purchase.productName, purchase.sku, purchase.supplier));
@@ -320,44 +320,78 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
           <td><span className="pill">{purchaseStatus(state, purchase.id, purchase.acquisition)}</span></td>
           <td>{money(purchase.total)}</td>
           <td><DetailsDialog id={"compra-" + purchase.id} title="Detalhes da compra" reopen={focus === purchase.id}>
-          <div className="sale-detail-content">
-          {error && focus === purchase.id && <p className="feedback error" role="alert">{error}</p>}
-          <div className="sale-detail-card"><h3>{purchase.productName}</h3>
-            <p>{calendarLabel(purchase.date)} · {storeName(purchase.store, state)} · {purchase.supplier}</p>
-            <p>{purchaseStatus(state, purchase.id, purchase.acquisition)} · {money(purchase.total)}</p>
-          </div>
-          <div className="record-actions">
-            <p>{purchase.sku} · {purchase.quantity} un. × {money(purchase.unitCost)}</p>
-            {purchase.openingBalance && <p>Regularização de saldo anterior</p>}
-            {purchase.invoiceNumber && <p>Nota fiscal nº {purchase.invoiceNumber}</p>}
-            {purchase.notes && <p>{purchase.notes}</p>}
-            {purchase.specs && <dl className="purchase-specs">{scooterFields.filter(({ key }) => purchase.specs?.[key]).map(({ key, label }) => (
-              <div key={key}><dt>{label}</dt><dd>{purchase.specs?.[key]}</dd></div>
-            ))}</dl>}
-          </div>
-          {!purchase.canceledAt && <form className="admin-form" action={savePurchaseCost}>
-            <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
-            <label>Custo unitário do lote (R$)<input name="unitCost" inputMode="decimal" required defaultValue={(purchase.unitCost / 100).toFixed(2).replace(".", ",")} /></label>
-            <div><Submit>Atualizar custo do lote</Submit></div>
-            <p className="form-note span-two">As vendas já registradas mantêm seus custos. Ajuste-as pelo histórico de vendas, se necessário.</p>
-          </form>}
-          {canCancel && !purchase.canceledAt && <details className="sale-detail-card cancel-sale">
-            <summary>Cancelar compra</summary>
-            <form action={reversePurchase}>
-              <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
-              <p>{purchase.openingBalance ? "O vínculo com o lote será removido e o saldo das unidades será mantido." : "A entrada será revertida nas unidades onde o lote está disponível."}</p>
-              {state.ledger.some((entry) => entry.id === purchase.id + "-payable" && entry.settlements.some((item) => !item.reversedOn)) &&
-                <label className="checkbox"><input type="checkbox" name="paymentReversed" required /> O pagamento foi devolvido ou lançado por engano.</label>}
-              <Submit variant="danger">Confirmar cancelamento</Submit>
-            </form>
-          </details>}
-          {purchase.canceledAt && <p className="form-note">Cancelada em {dateLabel(purchase.canceledAt)}</p>}
-          {!purchase.canceledAt && <form className="admin-form" action={savePurchaseColor}>
-            <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
-            <LotColorFields editing total={purchase.quantity} initial={purchase.lotColors ?? [{ color: purchase.color, quantity: purchase.quantity }]} /><div><Submit>Salvar cores do lote</Submit></div>
-          </form>}
-          <InvoiceBox owner="purchase" id={purchase.id} filter={filter} invoices={invoices} />
-          </div></DetailsDialog></td>
+            <div className="sale-detail-content">
+              {focus === purchase.id && (error || success) && <p className={"feedback " + (error ? "error" : "success")} role={error ? "alert" : "status"}>{error || success}</p>}
+              <section className="sale-detail-card sale-summary">
+                <h3>{purchase.productName}</h3>
+                <p>{purchase.sku} · {storeName(purchase.store, state)} · {calendarLabel(purchase.date)}</p>
+                <div className="sale-statuses">
+                  <span className="pill">{purchaseStatus(state, purchase.id, purchase.acquisition)}</span>
+                  {purchase.openingBalance && <span className="pill">Regularização de saldo anterior</span>}
+                </div>
+                {purchase.canceledAt && <p>Cancelada em {dateLabel(purchase.canceledAt)}</p>}
+                <dl className="sale-payment-totals">
+                  <div><dt>Total da compra</dt><dd>{money(purchase.total)}</dd></div>
+                  <div><dt>Custo unitário</dt><dd>{money(purchase.unitCost)}</dd></div>
+                  <div><dt>Quantidade</dt><dd>{purchase.quantity} un.</dd></div>
+                </dl>
+              </section>
+
+              <section className="sale-detail-card">
+                <h3>Dados da compra</h3>
+                <dl className="finance-rows">
+                  <div><dt>Fornecedor</dt><dd>{purchase.supplier}</dd></div>
+                  {purchase.invoiceNumber && <div><dt>Número da nota fiscal</dt><dd>{purchase.invoiceNumber}</dd></div>}
+                </dl>
+                {purchase.notes && <div><h4>Observações</h4><p>{purchase.notes}</p></div>}
+                {purchase.specs && Object.values(purchase.specs).some(Boolean) && <details>
+                  <summary>Ficha técnica registrada</summary>
+                  <dl className="purchase-specs">{scooterFields.filter(({ key }) => purchase.specs?.[key]).map(({ key, label }) => (
+                    <div key={key}><dt>{label}</dt><dd>{purchase.specs?.[key]}</dd></div>
+                  ))}</dl>
+                </details>}
+              </section>
+
+              <section className="sale-detail-card">
+                <h3>Lote e estoque</h3>
+                <div className="sale-statuses">{(purchase.lotColors ?? [{ color: purchase.color, quantity: purchase.quantity }]).map((row) =>
+                  <span className="pill" key={row.color ?? "none"}>{row.color ?? "Sem cor definida"} · {row.quantity} un.</span>)}</div>
+                {!purchase.canceledAt && <>
+                  <details><summary>Editar custo do lote</summary>
+                    <form className="admin-form" action={savePurchaseCost}>
+                      <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
+                      <label>Custo unitário do lote (R$)<input name="unitCost" inputMode="decimal" required defaultValue={(purchase.unitCost / 100).toFixed(2).replace(".", ",")} /></label>
+                      <div><Submit>Atualizar custo do lote</Submit></div>
+                      <p className="form-note span-two">As vendas já registradas mantêm seus custos. Ajuste-as pelo histórico de vendas, se necessário.</p>
+                    </form>
+                  </details>
+                  <details><summary>Editar cores do lote</summary>
+                    <form className="admin-form" action={savePurchaseColor}>
+                      <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
+                      <LotColorFields editing total={purchase.quantity} initial={purchase.lotColors ?? [{ color: purchase.color, quantity: purchase.quantity }]} />
+                      <div><Submit>Salvar cores do lote</Submit></div>
+                    </form>
+                  </details>
+                </>}
+              </section>
+
+              <section className="sale-detail-card">
+                <h3>Documentos</h3>
+                <InvoiceBox owner="purchase" id={purchase.id} filter={filter} invoices={invoices} />
+              </section>
+              {canCancel && !purchase.canceledAt && <div>
+                <DetailsDialog id={"cancelar-compra-" + purchase.id} title="Cancelar compra?" trigger="Cancelar compra" danger>
+                  <form className="admin-form" action={reversePurchase}>
+                    <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
+                    <p className="span-two">{purchase.openingBalance ? "O vínculo com o lote será removido e o saldo das unidades será mantido." : "A entrada será revertida nas unidades onde o lote está disponível."}</p>
+                    {state.ledger.some((entry) => entry.id === purchase.id + "-payable" && entry.settlements.some((item) => !item.reversedOn)) &&
+                      <label className="checkbox span-two"><input type="checkbox" name="paymentReversed" required /> O pagamento foi devolvido ou lançado por engano.</label>}
+                    <div className="span-two"><Submit variant="danger">Confirmar cancelamento</Submit></div>
+                  </form>
+                </DetailsDialog>
+              </div>}
+            </div>
+          </DetailsDialog></td>
         </tr>
       ))}</Table> : <Empty>{query || category ? "Nenhuma compra encontrada." : "As compras registradas nesta unidade aparecerão aqui."}</Empty>}
     </section>
@@ -1014,7 +1048,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
-          {active.id === "compras" && <Purchases canCancel={user.role === "admin" || isPrimaryAdmin(user)} canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
+          {active.id === "compras" && <Purchases canCancel={user.role === "admin" || isPrimaryAdmin(user)} canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} success={params.ok} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
