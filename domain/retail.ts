@@ -24,7 +24,7 @@ export const paymentMethods = ["Pix", "Cartão", "Dinheiro", "Financiamento", "P
 export const productCategories = ["Scooter elétrica", "Acessório", "Peça"] as const;
 export type TaxRate = { id: string; name: string; basisPoints: number; defaultForSale: boolean };
 export type SaleTax = { amount: number; name: string; basisPoints?: number };
-export type CardMachine = { id: string; name: string };
+export type CardMachine = { id: string; name: string; inactive?: boolean };
 export type CardRate = { machineId?: string; id: string; name: string; mode: "Débito" | "Crédito"; installments: number; basisPoints: number };
 export const legacyCardMachine = "sem-maquininha";
 export const rateMachineId = (rate: CardRate) => rate.machineId ?? legacyCardMachine;
@@ -33,6 +33,10 @@ export function cardMachineOptions(machines: CardMachine[], rates: CardRate[]) {
     ? [...machines, { id: legacyCardMachine, name: "Taxas anteriores" }]
     : machines;
 }
+
+export const cardMachineIsActive = (machines: CardMachine[], id: string) =>
+  (id === legacyCardMachine || machines.some((machine) => machine.id === id)) &&
+  !machines.some((machine) => machine.id === id && machine.inactive);
 
 export type AuditEvent = { id: string; actor: string; action: string; at: string };
 export type Testimonial = { id: string; author: string; quote: string };

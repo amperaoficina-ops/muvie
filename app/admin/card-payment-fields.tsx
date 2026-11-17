@@ -1,6 +1,6 @@
 "use client";
 
-import { cardMachineOptions, rateMachineId, type CardMachine, type CardRate } from "@/domain/retail";
+import { cardMachineIsActive, cardMachineOptions, rateMachineId, type CardMachine, type CardRate } from "@/domain/retail";
 import { SearchSelect } from "./search-select";
 
 export function CardPaymentFields({ machines, rates, machineId, rateId, onChange, names }: {
@@ -8,8 +8,8 @@ export function CardPaymentFields({ machines, rates, machineId, rateId, onChange
   onChange: (machineId: string, rateId: string) => void;
   names?: { machine: string; rate: string };
 }) {
-  const options = cardMachineOptions(machines, rates);
-  const conditions = rates.filter((rate) => rateMachineId(rate) === machineId);
+  const options = cardMachineOptions(machines, rates).filter((item) => !item.inactive);
+  const conditions = rates.filter((rate) => rateMachineId(rate) === machineId && cardMachineIsActive(machines, machineId));
   return <>
     <label>Maquininha<SearchSelect name={names?.machine} required value={machineId} onChange={(event) => onChange(event.target.value, "")}>
       <option value="" disabled>{options.length ? "Selecione a maquininha" : "Nenhuma maquininha cadastrada"}</option>

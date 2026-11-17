@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, legacyCardMachine, rateMachineId, updateSaleCosts, updatePurchaseCost,
+  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -150,8 +150,11 @@ export async function saveCardMachine(form: FormData) {
 }
 
 export async function manageCardMachine(form: FormData) {
-  const remove = form.get("operation") === "delete";
-  const message = remove ? "Maquininha excluída." : "Nome da maquininha atualizado.";
+  const operation = form.get("operation");
+  const remove = operation === "delete";
+  const changeStatus = operation === "disable" || operation === "enable";
+  const message = remove ? "Maquininha excluída." : changeStatus
+    ? (operation === "disable" ? "Maquininha desativada." : "Maquininha reativada.") : "Nome da maquininha atualizado.";
   await runAction(form, "taxas", message, async (user) => {
     if (user.role !== "admin" && !isPrimaryAdmin(user)) throw new RetailError("Somente a Diretoria pode editar ou excluir maquininhas.");
     await editWithAudit(user, message, (state) => {
@@ -164,6 +167,11 @@ export async function manageCardMachine(form: FormData) {
         if (form.get("confirmed") !== "on") throw new RetailError("Confirme a exclusão da maquininha e das taxas.");
         state.cardMachines = state.cardMachines.filter((item) => item.id !== id);
         state.cardRates = state.cardRates.filter((rate) => rate.machineId !== id);
+        return;
+      }
+      if (changeStatus) {
+        if (machine) machine.inactive = operation === "disable";
+        else state.cardMachines.push({ id, name: "Taxas anteriores", inactive: operation === "disable" });
         return;
       }
       const name = value(form, "name", 70);
@@ -318,8 +326,8 @@ export async function saveSale(form: FormData) {
           const paid = parseReais(String(amounts[index] ?? ""));
           if (!matched || paid === null) throw new RetailError("Confira os pagamentos da venda.");
           if (methods.length === 1 && paid === 0) return [];
-          if (matched === "Cartão" && !state.cardRates.some((rate) => rate.id === rates[index] && rateMachineId(rate) === machines[index])) {
-            throw new RetailError("Selecione a maquininha e uma taxa cadastrada nela.");
+          if (matched === "Cartão" && !state.cardRates.some((rate) => rate.id === rates[index] && rateMachineId(rate) === machines[index] && cardMachineIsActive(state.cardMachines, rateMachineId(rate)))) {
+            throw new RetailError("Selecione uma maquininha ativa e uma taxa cadastrada nela.");
           }
           return [{ method: matched, amount: paid, assetDescription: matched === "Produto" ? String(assets[index] ?? "").trim().slice(0, 120) : undefined, rateId: String(rates[index] ?? ""),
             received: statuses[index] === "received", due: String(dates[index] ?? "") }];

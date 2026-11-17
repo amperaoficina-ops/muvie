@@ -2,7 +2,7 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 import { canAccess } from "@/domain/access";
 import { proposalQuote } from "@/domain/proposal";
-import { businessDate, money, rateMachineId, storeList } from "@/domain/retail";
+import { businessDate, cardMachineIsActive, money, rateMachineId, storeList } from "@/domain/retail";
 import { getCurrentUser } from "@/lib/auth";
 import { readRetail } from "@/lib/retail-store";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   const state = await readRetail();
   const store = storeList(state).find((unit) => unit.id === storeId);
   const validMachines = methods.every((method, index) => method !== "Cartão" ||
-    state.cardRates.some((rate) => rate.id === rates[index] && rateMachineId(rate) === machines[index]));
+    state.cardRates.some((rate) => rate.id === rates[index] && rateMachineId(rate) === machines[index] && cardMachineIsActive(state.cardMachines, rateMachineId(rate))));
   const quote = store && validMachines && proposalQuote(state.products, state.cardRates, store.id,
     ids.map((productId, index) => ({ productId, quantity: quantities[index] ?? "" })),
     methods.map((method, index) => ({ method, amount: amounts[index] ?? "", rateId: rates[index] ?? "" })),

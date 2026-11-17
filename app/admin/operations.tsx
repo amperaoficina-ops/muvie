@@ -21,10 +21,10 @@ export function CardSettings({ state, machineId, error, canManage }: { state: Re
     {selected ? <>
       <nav className="stock-category-filter" aria-label="Filtrar taxas por maquininha">
         {machines.map((item) => <Link key={item.id} aria-current={item.id === selected.id ? "page" : undefined}
-          href={"/admin?tab=taxas&maquininha=" + encodeURIComponent(item.id)}>{item.name}</Link>)}
+          href={"/admin?tab=taxas&maquininha=" + encodeURIComponent(item.id)}>{item.name}{item.inactive ? " · Inativa" : ""}</Link>)}
       </nav>
       <section className="panel">
-        <div className="panel-title"><h2>{selected.name}</h2>
+        <div className="panel-title"><h2>{selected.name}{selected.inactive ? " · Inativa" : ""}</h2>
           <div className="workspace-section-links">
             <a className="button yellow" href="#nova-taxa">＋ Adicionar taxa</a>
             {canManage && <DetailsDialog key={selected.id} id={"maquininha-" + selected.id} title={selected.name} trigger="Editar nome da maquininha">
@@ -32,6 +32,14 @@ export function CardSettings({ state, machineId, error, canManage }: { state: Re
                 <input type="hidden" name="machineId" value={selected.id} />
                 <label className="span-two">Nome<input name="name" defaultValue={selected.name} required maxLength={70} /></label>
                 <div className="span-two"><Submit>Salvar nome</Submit></div>
+              </form>
+              <form action={manageCardMachine} className="admin-form">
+                <input type="hidden" name="machineId" value={selected.id} />
+                <input type="hidden" name="operation" value={selected.inactive ? "enable" : "disable"} />
+                <p className="form-note span-two">{selected.inactive ? "Reative para voltar a usar esta maquininha em vendas e simulações." : "Desative para suspender o uso em novas vendas e simulações."}</p>
+                <div className="span-two"><Submit variant={selected.inactive ? "yellow" : "danger"}>
+                  {selected.inactive ? "Reativar maquininha" : "Desativar maquininha"}
+                </Submit></div>
               </form>
               {selected.id !== legacyCardMachine && <form action={manageCardMachine} className="admin-form">
                 <input type="hidden" name="machineId" value={selected.id} /><input type="hidden" name="operation" value="delete" />
