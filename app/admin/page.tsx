@@ -420,9 +420,19 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
         <form action={saveSaleCosts} className="invoice-form">
           <FilterInput filter={filter} /><input type="hidden" name="focus" value={sale.id} />
           {(sale.lines ?? [sale]).map((line, index) => <label key={index}>{line.productName} · custo total de {line.quantity} un.
-            <input name="lineCost" inputMode="decimal" required maxLength={32}
+            <input name="lineCost" inputMode="decimal" maxLength={32}
               defaultValue={line.cost == null || line.missingCostUnits ? "" : (line.cost / 100).toFixed(2).replace(".", ",")} />
           </label>)}
+          <label>Comissão (R$)<input name="commission" inputMode="decimal" required maxLength={32}
+            defaultValue={((sale.commission ?? 0) / 100).toFixed(2).replace(".", ",")} /></label>
+          <label>Imposto (R$)<input name="tax" inputMode="decimal" required maxLength={32}
+            defaultValue={((sale.tax?.amount ?? 0) / 100).toFixed(2).replace(".", ",")} /></label>
+          {(sale.payments ?? [{ method: sale.method, amount: sale.total, fee: sale.cardFees ?? 0 }])
+            .filter((payment) => payment.method === "Cartão").map((payment, index) =>
+              <label key={index}>Taxa do cartão {index + 1} · pagamento de {money(payment.amount)} (R$)
+                <input name="cardFee" inputMode="decimal" required maxLength={32}
+                  defaultValue={(payment.fee / 100).toFixed(2).replace(".", ",")} />
+              </label>)}
           <Submit>Salvar custos</Submit>
         </form>
       </details>}{!sale.canceledAt && <details className="sale-detail-card cancel-sale"><summary>Cancelar venda</summary>

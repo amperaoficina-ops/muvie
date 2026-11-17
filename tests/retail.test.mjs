@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, stockComposition, transferStock } from "../domain/retail.ts";
+import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, stockComposition, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -207,4 +207,24 @@ test("imposto padrão calcula sobre a venda com desconto e o manual aceita zero"
   assert.equal(report.result, 254506);
   recordCheckout(state, { ...checkout, id: "venda-manual", store: "sao-jose", manualTax: 0, items: [{ ...checkout.items[0], origin: "lote-sj" }] });
   assert.equal(state.sales[0].tax.amount, 0);
+});
+
+test("correção dos encargos atualiza caixa, lucro e comissão a pagar", () => {
+  const state = fixture();
+  linkOldStock(state, "lote", "scooter", "palhoca", 300000);
+  state.cardRates.push({ id: "rate", name: "Teste", mode: "Crédito", installments: 1, basisPoints: 200 });
+  recordCheckout(state, { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "lote" }],
+    payments: [{ method: "Pix", amount: 100000, received: true, due: "" }, { method: "Cartão", amount: 489900, received: true, due: "", rateId: "rate" }] });
+  const adjustment = { costs: [null], commission: 10000, tax: 9000, cardFees: [5000] };
+  updateSaleCosts(state, input.id, adjustment);
+  const report = financialReport(state, "2026-11-07", "2026-11-07", "palhoca");
+  assert.equal(report.cash, 584900);
+  assert.equal(report.payable, 10000);
+  assert.equal(report.result, 265900);
+  assert.equal(saleNetProfit(state.sales[0]), report.result);
+  const entry = state.ledger.find((row) => row.kind === "comissao");
+  settleEntry(state, entry.id, { id: "comissao-parcial", amount: 4000, date: "2026-11-07" });
+  const snapshot = structuredClone(state);
+  assert.throws(() => updateSaleCosts(state, input.id, { ...adjustment, commission: 3999 }));
+  assert.deepEqual(state, snapshot);
 });

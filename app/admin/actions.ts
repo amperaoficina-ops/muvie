@@ -509,8 +509,13 @@ export async function saveSaleCosts(form: FormData) {
   await runAction(form, "vendas", "Custos da venda atualizados.", async (user) => {
     if (user.role !== "admin" && !isPrimaryAdmin(user)) throw new RetailError("Sem permissão para editar custos.");
     await editWithAudit(user, "Custos da venda atualizados.", (state) => {
-      const costs = form.getAll("lineCost").map((item) => typeof item === "string" && item.trim() ? parseReais(item) ?? -1 : -1);
-      updateSaleCosts(state, value(form, "focus", 36), costs);
+      const readAmount = (amount: FormDataEntryValue | null) => typeof amount === "string" && amount.trim() ? parseReais(amount) ?? -1 : -1;
+      updateSaleCosts(state, value(form, "focus", 36), {
+        costs: form.getAll("lineCost").map((item) => item === "" ? null : readAmount(item)),
+        commission: readAmount(form.get("commission")),
+        tax: readAmount(form.get("tax")),
+        cardFees: form.getAll("cardFee").map(readAmount),
+      });
     });
   });
 }

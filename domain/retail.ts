@@ -529,16 +529,62 @@ export function updatePurchaseCost(state: RetailState, id: string, unitCost: num
   for (const lot of state.stockLots) if (lot.purchaseId === id) lot.unitCost = unitCost;
 }
 
-export function updateSaleCosts(state: RetailState, id: string, costs: number[]) {
+export function updateSaleCosts(state: RetailState, id: string, input: {
+  costs: Array<number | null>; commission: number; tax: number; cardFees: number[];
+}) {
   const sale = state.sales.find((item) => item.id === id);
   if (!sale || sale.canceledAt) throw new RetailError("Venda ativa não encontrada.");
   const lines = sale.lines ?? [sale];
-  if (costs.length !== lines.length || costs.some((cost) => !Number.isSafeInteger(cost) || cost < 0)) throw new RetailError("Confira o custo de cada item.");
-  const total = costs.reduce((sum, cost) => sum + cost, 0);
+  const validAmount = (amount: number) => Number.isSafeInteger(amount) && amount >= 0;
+  if (input.costs.length !== lines.length || input.costs.some((cost) => cost !== null && !validAmount(cost))) {
+    throw new RetailError("Confira o custo de cada item.");
+  }
+  const total = lines.reduce((sum, line, index) => sum + (input.costs[index] ?? line.cost ?? 0), 0);
   if (!Number.isSafeInteger(total)) throw new RetailError("Custo total fora do limite.");
-  sale.lines?.forEach((line, index) => { line.cost = costs[index]; line.missingCostUnits = 0; });
-  sale.cost = total;
-  sale.missingCostUnits = 0;
+  if (!validAmount(input.commission) || !validAmount(input.tax) || input.tax > sale.total) {
+    throw new RetailError("Confira a comissão e o imposto. O imposto não pode superar o total da venda.");
+  }
+
+  const cardPayments = (sale.payments ?? [{ method: sale.method, amount: sale.total }])
+    .map((payment, index) => ({ payment, index })).filter(({ payment }) => payment.method === "Cartão");
+  if (input.cardFees.length !== cardPayments.length ||
+      input.cardFees.some((fee, index) => !validAmount(fee) || fee > cardPayments[index].payment.amount)) {
+    throw new RetailError("A taxa de cartão deve estar entre zero e o valor de cada pagamento.");
+  }
+
+  const commissionEntry = state.ledger.find((entry) => entry.saleId === id && entry.kind === "comissao" && !entry.canceled);
+  if (commissionEntry && settledAmount(commissionEntry) > input.commission) {
+    throw new RetailError("A comissão informada é menor que o valor já pago. Revise a baixa no Financeiro.");
+  }
+
+  sale.lines?.forEach((line, index) => {
+    const cost = input.costs[index];
+    if (cost !== null) { line.cost = cost; line.missingCostUnits = 0; }
+  });
+  if (sale.lines || input.costs[0] !== null) sale.cost = total;
+  sale.missingCostUnits = sale.lines
+    ? sale.lines.reduce((sum, line) => sum + line.missingCostUnits, 0)
+    : input.costs[0] === null ? sale.missingCostUnits : 0;
+
+  if (input.tax !== (sale.tax?.amount ?? 0)) sale.tax = { name: sale.tax?.name ?? "Imposto manual", amount: input.tax };
+  sale.commission = input.commission;
+  if (commissionEntry) commissionEntry.amount = input.commission;
+  else if (input.commission > 0) state.ledger.unshift({
+    id: id + "-commission", saleId: id, store: sale.store, name: "Comissão" + (sale.sellerName ? " · " + sale.sellerName : ""),
+    kind: "comissao", direction: "out", amount: input.commission, date: businessDate(new Date(sale.createdAt)), due: "", settlements: [],
+  });
+
+  sale.cardFees = input.cardFees.reduce((sum, fee) => sum + fee, 0);
+  cardPayments.forEach(({ index }, position) => {
+    const fee = input.cardFees[position];
+    const payment = sale.payments?.[index];
+    if (payment && payment.fee !== fee) { payment.fee = fee; delete payment.rate; }
+    const receipt = state.ledger.find((entry) => entry.id === id + (sale.payments ? "-payment-" + index : "-receipt") && entry.kind === "venda");
+    if (receipt && !receipt.canceled) {
+      receipt.cardFee = fee;
+      receipt.name = "Venda · Cartão" + (fee ? " · taxa " + money(fee) : "");
+    }
+  });
 }
 
 export function cancelSale(state: RetailState, id: string, date: string, refundConfirmed = false) {
