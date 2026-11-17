@@ -157,8 +157,10 @@ export async function manageCardMachine(form: FormData) {
     await editWithAudit(user, message, (state) => {
       const id = value(form, "machineId", 36);
       const machine = state.cardMachines.find((item) => item.id === id);
-      if (!machine) throw new RetailError("Maquininha não encontrada.");
+      const legacy = id === legacyCardMachine && state.cardRates.some((rate) => rateMachineId(rate) === id);
+      if (!machine && !legacy) throw new RetailError("Maquininha não encontrada.");
       if (remove) {
+        if (id === legacyCardMachine) throw new RetailError("Este grupo de taxas é gerenciado na edição de cada condição.");
         if (form.get("confirmed") !== "on") throw new RetailError("Confirme a exclusão da maquininha e das taxas.");
         state.cardMachines = state.cardMachines.filter((item) => item.id !== id);
         state.cardRates = state.cardRates.filter((rate) => rate.machineId !== id);
@@ -168,7 +170,8 @@ export async function manageCardMachine(form: FormData) {
       if (state.cardMachines.some((item) => item.id !== id && item.name.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
         throw new RetailError("Já existe uma maquininha com esse nome.");
       }
-      machine.name = name;
+      if (machine) machine.name = name;
+      else state.cardMachines.push({ id, name });
     });
   });
 }

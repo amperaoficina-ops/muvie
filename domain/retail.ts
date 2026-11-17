@@ -29,7 +29,9 @@ export type CardRate = { machineId?: string; id: string; name: string; mode: "DÃ
 export const legacyCardMachine = "sem-maquininha";
 export const rateMachineId = (rate: CardRate) => rate.machineId ?? legacyCardMachine;
 export function cardMachineOptions(machines: CardMachine[], rates: CardRate[]) {
-  return rates.some((rate) => !rate.machineId) ? [...machines, { id: legacyCardMachine, name: "Taxas anteriores" }] : machines;
+  return rates.some((rate) => !rate.machineId) && !machines.some((machine) => machine.id === legacyCardMachine)
+    ? [...machines, { id: legacyCardMachine, name: "Taxas anteriores" }]
+    : machines;
 }
 
 export type AuditEvent = { id: string; actor: string; action: string; at: string };

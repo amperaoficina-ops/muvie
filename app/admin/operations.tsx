@@ -27,17 +27,17 @@ export function CardSettings({ state, machineId, error, canManage }: { state: Re
         <div className="panel-title"><h2>{selected.name}</h2>
           <div className="workspace-section-links">
             <a className="button yellow" href="#nova-taxa">＋ Adicionar taxa</a>
-            {canManage && selected.id !== legacyCardMachine && <DetailsDialog key={selected.id} id={"maquininha-" + selected.id} title={selected.name} trigger="Editar maquininha">
+            {canManage && <DetailsDialog key={selected.id} id={"maquininha-" + selected.id} title={selected.name} trigger="Editar nome da maquininha">
               <form action={manageCardMachine} className="admin-form">
                 <input type="hidden" name="machineId" value={selected.id} />
                 <label className="span-two">Nome<input name="name" defaultValue={selected.name} required maxLength={70} /></label>
                 <div className="span-two"><Submit>Salvar nome</Submit></div>
               </form>
-              <form action={manageCardMachine} className="admin-form">
+              {selected.id !== legacyCardMachine && <form action={manageCardMachine} className="admin-form">
                 <input type="hidden" name="machineId" value={selected.id} /><input type="hidden" name="operation" value="delete" />
                 <label className="checkbox span-two"><input type="checkbox" name="confirmed" required /> Confirmo a exclusão da maquininha e das taxas cadastradas nela.</label>
                 <div className="span-two"><Submit variant="danger">Excluir maquininha</Submit></div>
-              </form>
+              </form>}
             </DetailsDialog>}
           </div>
         </div>
