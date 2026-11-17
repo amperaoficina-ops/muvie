@@ -517,6 +517,8 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 .catalog-color-dot > span { display: grid; place-items: center; width: 1rem; height: 1rem; border-radius: 50%; background: #16181e; color: #fff; font-size: .95rem; font-weight: 800; line-height: 1; }
 
 /* Landing page */
+.landing-page { --yellow: #ffcc03; }
+.landing-page .story-card figcaption { color: var(--yellow); }
 .landing-page .site-nav nav a,
 .landing-page .public-footer a {
   display: inline-flex;
