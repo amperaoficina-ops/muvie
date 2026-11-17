@@ -427,3 +427,9 @@ body:has(.model-dialog[open]) { overflow: hidden; }
   .admin-shell .admin-top > div:last-child { min-width: 0; }
   .admin-shell .admin-top > div:last-child > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+.sale-dialog { width: min(calc(100% - 2rem), 850px); }
+.sale-dialog .panel-title { position: sticky; top: 0; z-index: 1; background: #e8ecf1; }
+.sale-dialog .panel-title button { min-width: 44px; font-size: 1.25rem; }
+body:has(.sale-dialog[open]) { overflow: hidden; }
+.sale-pending-table h3 { padding: .65rem 1rem; font-size: .9rem; }

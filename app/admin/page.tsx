@@ -1,3 +1,4 @@
+import { SaleDialog } from "./sale-dialog";
 import { AttachmentPicker } from "./attachment-picker";
 import { MobileMenu } from "./mobile-menu";
 import { randomUUID } from "node:crypto";
@@ -357,17 +358,21 @@ function SaleFollowUp({ state, sales, invoices, filter }: {
   const pending = active.filter((sale) => !attached.has(sale.id) || pendingPayment.has(sale.id));
   return <section className="panel sale-follow-up">
     <div className="panel-title"><h2>Acompanhamento de vendas</h2></div>
-    <dl className="finance-rows">
-      <div><dt>A receber</dt><dd>{waiting.length}</dd></div>
-      <div><dt>Sem nota anexada</dt><dd>{missing.length}</dd></div>
-      <div><dt>Com nota anexada</dt><dd>{active.length - missing.length}</dd></div>
-    </dl>
-    {pending.length ? <details className="sale-pending-list"><summary>Ver pendências ({pending.length})</summary>
-      <ul>{pending.map((sale) => <li key={sale.id}>
-        <Link className="back-link" href={adminUrl("vendas", filter) + "&ficha=" + sale.id + "#venda-" + sale.id}>{sale.customer} · {sale.productName}</Link>
-        <small>{[pendingPayment.has(sale.id) && "A receber", !attached.has(sale.id) && "Sem nota anexada"].filter(Boolean).join(" · ")}</small>
-      </li>)}</ul>
-    </details> : <p className="admin-empty">Nenhuma pendência de recebimento ou anexo nesta seleção.</p>}
+    <div className="dashboard-values">
+      <div><p>A receber</p><strong>{waiting.length}</strong></div>
+      <div><p>Sem nota anexada</p><strong>{missing.length}</strong></div>
+      <div><p>Com nota anexada</p><strong>{active.length - missing.length}</strong></div>
+    </div>
+    {pending.length ? <div className="sale-pending-table">
+      <h3>Pendências</h3>
+      <Table headers={["Venda", "Unidade", "Total", "Pendência", "Ação"]}>{pending.map((sale) => <tr key={sale.id}>
+        <td><strong>{sale.customer}</strong><small>{sale.productName}</small></td>
+        <td>{storeName(sale.store, state)}</td><td>{money(sale.total)}</td>
+        <td>{pendingPayment.has(sale.id) && <span className="pill">A receber</span>}{" "}
+          {!attached.has(sale.id) && <span className="pill">Sem nota anexada</span>}</td>
+        <td><Link className="back-link" href={adminUrl("vendas", filter) + "&ficha=" + sale.id + "#venda-" + sale.id}>Abrir venda</Link></td>
+      </tr>)}</Table>
+    </div> : <p className="admin-empty">Nenhuma pendência de recebimento ou anexo nesta seleção.</p>}
   </section>;
 }
 
@@ -391,13 +396,14 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices = [], fo
   })}</Table>;
 }
 
-function Sales({ state, filter, invoices, focus }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string }) {
+function Sales({ state, filter, invoices, focus, error }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string; error?: string }) {
   const sales = state.sales.filter((sale) => !filter || sale.store === filter);
   const contacts = state.contacts.filter((contact) => !filter || contact.store === filter);
   const products = state.products.filter((product) => product.price > 0 && (filter ? product.stock[filter] > 0 : storeList(state).some((store) => product.stock[store.id] > 0)));
   const saleId = randomUUID();
   return <div className="sales-workspace">
-    <section id="nova-venda" className="panel"><div className="panel-title"><h2>Nova venda</h2></div>
+    <SaleDialog key={saleId} reopen={Boolean(error)}>
+      {error && <p className="feedback error" role="alert">{error}</p>}
       {products.length ? <form className="admin-form" action={saveSale}>
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
         {filter ? <label>Unidade
@@ -421,7 +427,7 @@ function Sales({ state, filter, invoices, focus }: { state: RetailState; filter:
         </select><small>Quando houver estoque próprio e consignado do mesmo modelo, escolha a origem da moto vendida.</small></label>
         <div className="span-two"><Submit>Registrar venda</Submit></div>
       </form> : <Empty>Para registrar uma venda, cadastre um produto com preço e adicione saldo à unidade em <Link href={adminUrl("estoque", filter)}>Estoque</Link>.</Empty>}
-    </section>
+    </SaleDialog>
     {invoices && <SaleFollowUp state={state} sales={sales} invoices={invoices} filter={filter} />}
     <section id="historico-vendas" className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable state={state} sales={sales} filter={filter} canCancel invoices={invoices ?? []} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
   </div>;
@@ -587,8 +593,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           </>}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
-            <nav aria-label="Seções de vendas" className="workspace-section-links"><a href="#historico-vendas">Histórico de vendas</a></nav>
-            <Sales state={state} filter={filter} invoices={invoices} focus={params.ficha} />
+            <Sales state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
