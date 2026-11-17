@@ -310,7 +310,7 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 /* Backoffice */
 .admin-shell { background: #f4f5f8; color: #181b23; grid-template-columns: 238px minmax(0, 1fr); }
 .admin-shell .sidebar { background: #16181e; gap: 1.35rem; }
-.admin-shell .sidebar-group > p { color: #acafbb; }
+.admin-shell .sidebar, .admin-shell .sidebar-group > p, .admin-shell .sidebar .brand small { color: #fff; }
 .admin-shell .sidebar nav a { border-radius: 9px; }
 .admin-shell .sidebar nav a[aria-current] { background: #353021; }
 .admin-shell .admin-top { border-color: #e2e4eb; }
@@ -321,7 +321,17 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .admin-shell .panel-title { padding: 1rem 1.15rem; border-color: #eef0f4; }
 .admin-shell .panel-title h2 { letter-spacing: -.015em; }
 .admin-shell .admin-form { gap: 1rem; padding: 1.15rem; }
-.admin-shell :is(input:not([type="checkbox"]), select, textarea) { border-color: #dce0e8; border-radius: 8px; }
+.admin-shell :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]), select, textarea) {
+  background: #edf0f4;
+  color: #181b23;
+  border-color: #b9c1ce;
+  border-radius: 8px;
+}
+.admin-shell :is(input, textarea)::placeholder { color: #525d6e; opacity: 1; }
+.admin-shell :is(input:not([type="file"]), select, textarea):focus-visible {
+  outline: 2px solid #8a6300;
+  outline-offset: 2px;
+}
 .admin-shell .table-wrap thead { background: #f7f8fb; }
 .admin-shell td { border-color: #eef0f4; }
 .admin-shell .editable-list summary:hover { background: #f8f9fb; }
