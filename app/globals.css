@@ -328,12 +328,12 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .admin-shell .admin-heading h1 { font-size: clamp(1.85rem, 3vw, 2.65rem); letter-spacing: -.045em; }
 .admin-shell .branch-filter { background: #e8eaf0; flex-wrap: wrap; }
 .admin-shell .panel {
-  background-color: #e8ecf1;
-  border-color: #c4ccd8;
+  background-color: #eee9dc;
+  border-color: #d1c8b4;
   border-radius: 15px;
   box-shadow: 0 2px 4px #18223508;
 }
-.admin-shell .panel-title { padding: 1rem 1.15rem; border-color: #c4ccd8; }
+.admin-shell .panel-title { padding: 1rem 1.15rem; border-color: #d1c8b4; }
 .admin-shell .panel-title h2 { letter-spacing: -.015em; }
 .admin-shell .admin-form { gap: 1rem; padding: 1.15rem; }
 .admin-shell :is(input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]), select, textarea) {
@@ -347,9 +347,10 @@ body:has(.model-dialog[open]) { overflow: hidden; }
   outline: 2px solid #8a6300;
   outline-offset: 2px;
 }
-.admin-shell table { background-color: #fff; }
-.admin-shell table thead { background-color: #dce2ea; }
-.admin-shell table :is(th, td) { border-bottom: 1px solid #b7c1cf; }
+.admin-shell table { background-color: #faf6eb; }
+.admin-shell table thead { background-color: #ded5bc; }
+.admin-shell table th { color: #383221; }
+.admin-shell table :is(th, td) { border-bottom: 1px solid #d1c8b4; }
 .admin-shell table tbody tr:last-child td { border-bottom: 0; }
 .admin-shell .editable-list > details + details { border-top-color: #c4ccd8; }
 .admin-shell :is(.address-fields, .scooter-fields, .invoice-box) { border-color: #a9b3c0; }
@@ -439,7 +440,7 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 }
 
 .sale-dialog { width: min(calc(100% - 2rem), 850px); }
-.sale-dialog .panel-title { position: sticky; top: 0; z-index: 1; background: #e8ecf1; }
+.sale-dialog .panel-title { position: sticky; top: 0; z-index: 1; background: #eee9dc; }
 .sale-dialog .panel-title button { min-width: 44px; font-size: 1.25rem; }
 body:has(.sale-dialog[open]) { overflow: hidden; }
 .sale-pending-table h3 { padding: .65rem 1rem; font-size: .9rem; }
