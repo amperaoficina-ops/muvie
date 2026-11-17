@@ -145,6 +145,7 @@ export function reverseSettlement(state: RetailState, entryId: string, paymentId
   const entry = state.ledger.find((item) => item.id === entryId && !item.canceled);
   const payment = entry?.settlements.find((item) => item.id === paymentId);
   if (!payment || !entry || (entry.kind === "ajuste" && !entry.manual)) throw new RetailError("Baixa indisponível para estorno.");
+  if (entry.nonCash && state.ledger.some((item) => item.id === entry.id + "-asset-sale")) throw new RetailError("Este bem já foi vendido.");
   if (!isCalendarDate(date) || date < payment.date) throw new RetailError("Informe uma data igual ou posterior à baixa.");
   payment.reversedOn ??= date;
 }
@@ -176,10 +177,28 @@ export function tradeInAssets(state: RetailState, store?: StoreId) {
       if (payment.method !== "Produto") return [];
       const id = sale.id + (sale.payments ? "-payment-" + index : "-receipt");
       const entry = entries.get(id);
+      const resale = entries.get(id + "-asset-sale");
       return [{ id, saleId: sale.id, store: sale.store, name: payment.assetDescription || "Produto recebido na troca",
         amount: payment.amount, received: entry ? (!entry.canceled && balanceDue(entry) === 0) : payment.received,
-        customer: sale.customer, createdAt: sale.createdAt }];
+        customer: sale.customer, createdAt: sale.createdAt, resale }];
     });
+  });
+}
+
+export function sellTradeInAsset(state: RetailState, assetId: string, amount: number, date: string) {
+  const asset = tradeInAssets(state).find((item) => item.id === assetId);
+  if (!asset || !asset.received) throw new RetailError("Bem ainda não recebido ou indisponível.");
+  if (asset.resale) return;
+  if (!Number.isSafeInteger(amount) || amount <= 0) throw new RetailError("Informe um valor de venda maior que zero.");
+  const receipt = state.ledger.find((entry) => entry.id === assetId);
+  if (!isCalendarDate(date) || date < businessDate(new Date(asset.createdAt)) ||
+      receipt?.settlements.some((item) => !item.reversedOn && item.date > date)) {
+    throw new RetailError("A data da venda do bem não pode ser anterior ao recebimento.");
+  }
+  const id = assetId + "-asset-sale";
+  state.ledger.unshift({
+    id, direction: "in", kind: "ajuste", store: asset.store, name: "Venda de bem · " + asset.name,
+    date, due: date, amount, settlements: [{ id: id + "-received", date, amount }],
   });
 }
 
@@ -675,6 +694,9 @@ export function cancelSale(state: RetailState, id: string, date: string, refundC
   const sale = state.sales.find((item) => item.id === id);
   if (!sale) throw new RetailError("Venda não encontrada.");
   if (sale.canceledAt) return;
+  if (tradeInAssets(state, sale.store).some((item) => item.saleId === id && item.resale)) {
+    throw new RetailError("Esta venda tem um bem de troca já vendido.");
+  }
   const linked = state.ledger.filter((entry) => entry.saleId === id);
   if (linked.some((entry) => entry.direction === "out" && settledAmount(entry))) {
     throw new RetailError("Há comissão ou repasse já pago. Regularize a baixa no Financeiro antes de cancelar.");

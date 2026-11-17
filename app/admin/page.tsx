@@ -18,7 +18,7 @@ import {
   balanceDue, money, saleNetProfit, tradeInAssets, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier } from "./actions";
+import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -358,25 +358,47 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
 }
 
 function CompanyAssets({ state, filter, showSales }: { state: RetailState; filter: Filter; showSales: boolean }) {
-  const tradeIns = tradeInAssets(state, filter || undefined);
+  const assets = tradeInAssets(state, filter || undefined);
+  const tradeIns = assets.filter((item) => !item.resale);
+  const sold = assets.filter((item) => item.resale);
   const structure = state.assets.filter((item) => !filter || item.store === filter);
   const totalTradeIns = tradeIns.reduce((sum, item) => sum + (item.received ? item.amount : 0), 0);
   const totalStructure = structure.reduce((sum, item) => sum + item.amount, 0);
   return <>
     <div className="dashboard-values">
-      <div><p>Bens recebidos em troca</p><strong>{money(totalTradeIns)}</strong></div>
+      <div><p>Bens de troca disponíveis</p><strong>{money(totalTradeIns)}</strong></div>
       <div><p>Estrutura cadastrada nas lojas</p><strong>{money(totalStructure)}</strong></div>
     </div>
     <section className="panel">
       <div className="panel-title"><h2>Bens de troca</h2></div>
-      {tradeIns.length ? <Table headers={["Bem", "Unidade", "Cliente", "Data da venda", "Valor acordado", "Status", ...(showSales ? ["Ação"] : [])]}>
+      {tradeIns.length ? <Table headers={["Bem", "Unidade", "Cliente", "Data da venda", "Valor acordado", "Status", "Ações"]}>
         {tradeIns.map((item) => <tr key={item.id}>
           <td><strong>{item.name}</strong></td><td>{storeName(item.store, state)}</td><td>{item.customer}</td>
           <td>{dateLabel(item.createdAt)}</td><td>{money(item.amount)}</td><td><span className={"pill " + (item.received ? "green" : "")}>{item.received ? "Recebido" : "A receber"}</span></td>
-          {showSales && <td><Link className="button" href={adminUrl("vendas", item.store) + "&ficha=" + encodeURIComponent(item.saleId)}>Ver venda</Link></td>}
+          <td><div className="workspace-section-links">
+            {item.received && <DetailsDialog id={"vender-bem-" + item.id} title="Vender bem" trigger="Vender bem">
+              <form action={saveTradeInSale} className="admin-form">
+                <FilterInput filter={filter} /><input type="hidden" name="assetId" value={item.id} />
+                <p className="span-two">{item.name} · {storeName(item.store, state)}</p>
+                <label>Valor da venda recebido (R$)<input name="amount" inputMode="decimal" required maxLength={32} /></label>
+                <label>Data do recebimento<input name="date" type="date" required defaultValue={new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date())} /></label>
+                <div className="span-two"><Submit>Registrar venda do bem</Submit></div>
+              </form>
+            </DetailsDialog>}
+            {showSales && <Link className="button" href={adminUrl("vendas", item.store) + "&ficha=" + encodeURIComponent(item.saleId)}>Ver venda original</Link>}
+          </div></td>
         </tr>)}
       </Table> : <Empty>Nenhum bem de troca nesta seleção.</Empty>}
     </section>
+    {sold.length > 0 && <section className="panel">
+      <div className="panel-title"><h2>Histórico de bens vendidos</h2></div>
+      <Table headers={["Bem", "Unidade", "Data do recebimento", "Valor da venda"]}>
+        {sold.map((item) => item.resale && <tr key={item.id}>
+          <td><strong>{item.name}</strong></td><td>{storeName(item.store, state)}</td>
+          <td>{calendarLabel(item.resale.date)}</td><td>{money(item.resale.amount)}</td>
+        </tr>)}
+      </Table>
+    </section>}
     <section className="panel">
       <div className="panel-title"><h2>Estrutura das lojas</h2></div>
       {structure.length ? <Table headers={["Bem", "Unidade", "Quantidade", "Valor de aquisição"]}>

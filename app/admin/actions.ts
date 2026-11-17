@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, updateSaleCosts, updatePurchaseCost,
-  postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
+  postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
@@ -196,6 +196,12 @@ export async function saveUser(form: FormData) {
       if (!result.upsertedCount) throw new RetailError("Este e-mail já está cadastrado.");
     }
     await editWithAudit(actor, "Acesso de usuário atualizado: " + email, () => {});
+  });
+}
+
+export async function saveTradeInSale(form: FormData) {
+  await commit(form, "bens", "Bem vendido e entrada registrada no caixa da unidade.", (state) => {
+    sellTradeInAsset(state, value(form, "assetId", 100), amount(form, "amount"), requiredDate(form, "date"));
   });
 }
 

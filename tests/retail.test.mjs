@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, sellTradeInAsset, recordPurchase, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -287,4 +287,18 @@ test("produto recebido na troca quita a venda sem entrar no caixa", () => {
   assert.deepEqual(tradeInAssets(state, "sao-jose"), []);
   cancelSale(state, input.id, date, true);
   assert.deepEqual(tradeInAssets(state), []);
+});
+
+test("revenda de bem recebido registra caixa na unidade de origem uma única vez", () => {
+  const state = fixture();
+  linkOldStock(state, "lote", "scooter", "palhoca", 300000);
+  recordCheckout(state, { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "lote" }],
+    payments: [{ method: "Produto", amount: 589900, received: true, due: "" }] });
+  const [asset] = tradeInAssets(state);
+  sellTradeInAsset(state, asset.id, 420000, "2026-11-08");
+  sellTradeInAsset(state, asset.id, 420000, "2026-11-08");
+  assert.equal(financialReport(state, "2026-11-08", "2026-11-08", "palhoca").cash, 420000);
+  assert.equal(financialReport(state, "2026-11-08", "2026-11-08", "sao-jose").cash, 0);
+  assert.equal(tradeInAssets(state)[0].resale.amount, 420000);
+  assert.throws(() => cancelSale(state, input.id, date, true), /bem de troca já vendido/);
 });
