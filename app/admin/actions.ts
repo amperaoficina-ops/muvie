@@ -12,6 +12,7 @@ import {
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
 import { accessFor, canAccess, isDirector, isPrimaryAdmin, moduleKeys, roles, invoiceModule, type Module, type Role } from "@/domain/access";
+import { storeContract } from "@/lib/contracts";
 import { saveCashStatement } from "@/lib/cash-statements";
 import { getMongoDb } from "@/lib/mongodb";
 import { hashPassword } from "@/lib/security";
@@ -870,5 +871,14 @@ export async function saveHistoricalPurchasePayment(form: FormData) {
       if (form.get("confirmed") !== "on") throw new RetailError("Confirme que a compra já foi paga.");
       registerHistoricalPurchasePayment(state, value(form, "focus", 36), requiredDate(form, "paidOn"), localToday());
     });
+  });
+}
+
+export async function importContract(form: FormData) {
+  await runAction(form, "contratos", "PDF importado e disponível para a equipe.", async (user) => {
+    if (!isDirector(user)) throw new RetailError("Somente a Diretoria pode importar contratos.");
+    const file = form.get("contract");
+    if (!(file instanceof File)) throw new RetailError("Selecione o PDF do contrato.");
+    await storeContract(file, value(form, "title", 120, false));
   });
 }

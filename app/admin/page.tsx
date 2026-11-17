@@ -1,3 +1,4 @@
+import { Contracts } from "./contracts";
 import { HistoricalPayments } from "./historical-payments";
 import { Cash } from "./cash";
 import { LotColorFields } from "./product-color-fields";
@@ -43,6 +44,7 @@ const nav = [
   { id: "produtos", label: "Produtos", icon: "box", description: "Cadastre os produtos usados nas compras, no estoque e nas vendas." },
   { id: "estoque", label: "Estoque", icon: "box", description: "Consulte saldos, registre movimentações e transfira produtos entre unidades." },
   { id: "compras", label: "Compras", icon: "bag", description: "Registre compras, dê entrada na unidade correta e organize as notas de fornecedores." },
+  { id: "contratos", label: "Contratos", icon: "bag", description: "Acesse contratos e termos de venda em PDF." },
   { id: "vendas", label: "Vendas", icon: "bag", description: "Registre vendas por unidade e acompanhe o histórico de cada operação." },
   { id: "bens", label: "Bens", icon: "box", description: "Acompanhe os bens da empresa e os produtos recebidos em troca por unidade." },
   { id: "fornecedores", label: "Fornecedores", icon: "users", description: "Cadastre os fornecedores usados nas compras." },
@@ -64,7 +66,7 @@ const nav = [
 ] as const;
 type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
-  { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
+  { title: "Operação", tabs: ["visao", "vendas", "contratos", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
   { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "caixa", "distribuicoes", "compromissos", "taxas", "impostos", "usuarios", "logs"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
@@ -1069,7 +1071,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
           </div>}
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
-          {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador", "fornecedores"].includes(active.id) && <div className={"admin-filter-bar" + (actionBesideUnits ? " crm-filter-bar" : "")}>
+          {!denied && !["contratos", "lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador", "fornecedores"].includes(active.id) && <div className={"admin-filter-bar" + (actionBesideUnits ? " crm-filter-bar" : "")}>
             {actionBesideUnits && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
             <div className="unit-filter"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery + commitmentQuery}>Todas</Link>
@@ -1110,6 +1112,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} invoices={invoices ?? []} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
+          {active.id === "contratos" && <Contracts canImport={isDirector(user)} />}
           {active.id === "caixa" && <Cash state={state} filter={filter} period={period} selected={params.conta} page={params.caixaPagina} direction={cashDirection} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "compromissos" && <Commitments view={commitmentView} paidFrom={paidFrom} paidTo={paidTo} requestedPage={params.compromissosPagina} kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}

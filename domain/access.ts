@@ -1,6 +1,6 @@
 export const modules = {
   visao: "Visão geral", produtos: "Produtos", estoque: "Estoque", compras: "Compras",
-  vendas: "Vendas", financeiro: "Financeiro", caixa: "Caixa", compromissos: "Compromissos", distribuicoes: "Distribuição de lucro", lojas: "Administração das lojas", crm: "Clientes / CRM",
+  vendas: "Vendas", contratos: "Contratos", financeiro: "Financeiro", caixa: "Caixa", compromissos: "Compromissos", distribuicoes: "Distribuição de lucro", lojas: "Administração das lojas", crm: "Clientes / CRM",
   simulador: "Simular venda", taxas: "Taxas e maquininhas", impostos: "Impostos", usuarios: "Usuários", logs: "Log de ações",
   bens: "Bens", fornecedores: "Fornecedores", funcionarios: "Funcionários", relatos: "Relatos da landing", consignados: "Consignados", catalogo: "Catálogo do site",
 } as const;
@@ -15,10 +15,10 @@ export type AccountAccess = { role?: Role; permissions?: Module[] | null; manage
 
 const defaults: Record<Role, readonly Module[]> = {
   admin: moduleKeys,
-  sales: ["visao", "estoque", "vendas", "crm", "simulador"],
+  sales: ["visao", "estoque", "vendas", "contratos", "crm", "simulador"],
   finance: ["visao", "bens", "compras", "fornecedores", "vendas", "financeiro", "caixa", "compromissos", "distribuicoes", "taxas", "impostos", "consignados"],
   inventory: ["produtos", "estoque", "compras", "fornecedores", "consignados"],
-  staff: ["visao", "produtos", "estoque", "compras", "vendas", "crm", "simulador"],
+  staff: ["visao", "produtos", "estoque", "compras", "vendas", "contratos", "crm", "simulador"],
 };
 
 export function isPrimaryAdmin(account: AccountAccess) {
