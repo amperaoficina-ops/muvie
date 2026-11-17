@@ -1,3 +1,4 @@
+import { CatalogColorSwatches } from "./catalog-color-swatches";
 import Image from "next/image";
 import Link from "next/link";
 import { money, stores, productColorAvailability, type Product } from "@/domain/retail";
@@ -66,9 +67,7 @@ export function ModelCard({ product, colors = [] }: { product: Product; colors?:
       <p className="eyebrow">{demo ? "MODELO DEMONSTRATIVO" : product.category}</p><h3>{product.name}</h3>
       {product.description && <p>{product.description}</p>}
       <strong>{product.price && !demo ? money(product.price) : "Preço sob consulta"}</strong>
-      {colors.length > 0 && <ul className="catalog-colors" aria-label="Disponibilidade por cor">
-        {colors.map(({ color, available }) => <li key={color}>{color} <small>{available ? "Em estoque" : "Sem estoque"}</small></li>)}
-      </ul>}
+      <CatalogColorSwatches colors={colors} />
       <ModelDetails name={product.name} imageUrl={product.imageUrl} specs={product.specs} colors={colors} />
     </div>
   </article>;

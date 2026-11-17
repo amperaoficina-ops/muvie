@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, productColorAvailability, sellTradeInAsset, recordPurchase, recordProfitDistribution, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, productColorAvailability, sellTradeInAsset, recordPurchase, recordProfitDistribution, recordSale, returnConsignedLot, stockComposition, stockLotId, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -344,4 +344,26 @@ test("distribuição de lucro aparece por unidade e período, sem reduzir o resu
   assert.equal(report.result, 0);
   assert.equal(financialReport(state, "2026-11-01", "2026-11-30", "sao-jose").distributions, 0);
   assert.equal(financialReport(state, "2026-10-01", "2026-10-31").distributions, 0);
+});
+
+test("uma compra multicolorida mantém o financeiro único e baixa a variante selecionada", () => {
+  const state = fixture();
+  const purchase = { id: "cores", productId: "scooter", store: "palhoca", unitCost: 100000, quantity: 10,
+    supplier: "Fornecedor", date: "2026-11-07", createdAt: date, acquisition: "consignada",
+    lotColors: [{ color: "Vermelho", quantity: 5 }, { color: "Azul", quantity: 2 }, { color: "Carbono", quantity: 3 }] };
+  assert.throws(() => recordPurchase(state, { ...purchase, quantity: 9 }), /somam/);
+  assert.equal(state.purchases.length, 0);
+  recordPurchase(state, purchase);
+  assert.equal(state.purchases.length, 1);
+  assert.equal(state.movements.length, 1);
+  const blue = state.stockLots.find((lot) => lot.color === "Azul");
+  recordCheckout(state, { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: stockLotId(blue) }],
+    payments: [{ method: "Pix", amount: 589900, received: true, due: "" }] });
+  assert.equal(state.sales[0].lines[0].color, "Azul");
+  assert.deepEqual(state.stockLots.map((lot) => lot.quantity), [5, 1, 3]);
+  cancelSale(state, input.id, date, true);
+  assert.deepEqual(state.stockLots.map((lot) => lot.quantity), [5, 2, 3]);
+  cancelPurchase(state, "cores", date);
+  assert.equal(state.products[0].stock.palhoca, 1);
+  assert.equal(state.movements.filter((row) => row.id.startsWith("cores-cancel")).length, 1);
 });

@@ -1,4 +1,4 @@
-import { LotColorField, ProductColorsField } from "./product-color-fields";
+import { LotColorFields, ProductColorsField } from "./product-color-fields";
 import { ModelCard } from "../catalog";
 import { SupplierField } from "./supplier-field";
 import { SearchSelect } from "./search-select";
@@ -17,7 +17,7 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, isCalendarDate, money, saleNetProfit, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
+  balanceDue, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
 import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
@@ -170,15 +170,15 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
 
     </div>
     {detailed && (lots.length ? <Table headers={["Produto", "Cor", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse", "Ação"]}>
-      {lots.map((lot) => <tr key={lot.purchaseId + lot.store}>
+      {lots.map((lot) => <tr key={stockLotId(lot) + lot.store}>
         <td>{state.products.find((product) => product.id === lot.productId)?.name ?? lot.productId}</td>
         <td>{lot.color ?? "Sem cor definida"}</td><td>{storeName(lot.store, state)}</td><td>{lot.supplier}</td><td>{calendarLabel(lot.date)}</td>
         <td>{lot.quantity} un.</td><td>{money(lot.quantity * lot.unitCost)}</td>
-        <td><DetailsDialog id={"devolucao-" + lot.purchaseId + "-" + lot.store} title="Estornar consignado" trigger="Estornar">
+        <td><DetailsDialog id={"devolucao-" + stockLotId(lot) + "-" + lot.store} title="Estornar consignado" trigger="Estornar">
           <form className="admin-form" action={returnConsignment}>
             <FilterInput filter={filter} />
             <input type="hidden" name="movementId" value={randomUUID()} />
-            <input type="hidden" name="purchaseId" value={lot.purchaseId} />
+            <input type="hidden" name="purchaseId" value={stockLotId(lot)} />
             <input type="hidden" name="productId" value={lot.productId} />
             <input type="hidden" name="store" value={lot.store} />
             <p className="span-two">{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId} · {lot.supplier} · {storeName(lot.store, state)}</p>
@@ -316,7 +316,7 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
       {purchases.length ? <Table headers={["Categoria", "Produto", "Cor", "Data", "Unidade", "Fornecedor", "Condição", "Total", "Ação"]}>{purchases.map((purchase) => (
         <tr key={purchase.id}>
           <td>{productCategories.find((item) => item === productCategoriesById.get(purchase.productId)) ?? "—"}</td>
-          <td><strong>{purchase.productName}</strong><small>{purchase.sku}</small></td><td>{purchase.color ?? "Sem cor definida"}</td>
+          <td><strong>{purchase.productName}</strong><small>{purchase.sku}</small></td><td>{(purchase.lotColors ?? [{ color: purchase.color, quantity: purchase.quantity }]).map((row) => <small key={row.color ?? "none"}>{row.color ?? "Sem cor definida"} · {row.quantity} un.</small>)}</td>
           <td>{calendarLabel(purchase.date)}</td><td>{storeName(purchase.store, state)}</td><td>{purchase.supplier}</td>
           <td><span className="pill">{purchaseStatus(state, purchase.id, purchase.acquisition)}</span></td>
           <td>{money(purchase.total)}</td>
@@ -355,7 +355,7 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
           {purchase.canceledAt && <p className="form-note">Cancelada em {dateLabel(purchase.canceledAt)}</p>}
           {!purchase.canceledAt && <form className="admin-form" action={savePurchaseColor}>
             <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
-            <LotColorField initial={purchase.color} /><div><Submit>Salvar cor do lote</Submit></div>
+            <LotColorFields editing total={purchase.quantity} initial={purchase.lotColors ?? [{ color: purchase.color, quantity: purchase.quantity }]} /><div><Submit>Salvar cores do lote</Submit></div>
           </form>}
           <InvoiceBox owner="purchase" id={purchase.id} filter={filter} invoices={invoices} />
           </div></DetailsDialog></td>
@@ -369,11 +369,10 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
         <input type="hidden" name="purchaseId" value={purchaseId} />
         <input type="hidden" name="focus" value={purchaseId} />
         <PurchaseProductFields canCreate={canCreateProduct} initialId={product?.id} products={state.products.map(({ id, name, sku, category, specs }) => ({ id, name, sku, category, specs }))} />
-        <LotColorField />
         <StoreField units={storeList(state)} filter={filter} label="Unidade que recebe o estoque" />
         <SupplierField suppliers={state.suppliers.map(({ id, name }) => ({ id, name }))} />
         <label>Cliente vinculado (opcional)<SearchSelect name="contactId"><option value="">Sem vínculo</option>{state.contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store, state)}</option>)}</SearchSelect></label>
-        <label>Quantidade<input name="quantity" type="number" min="1" max="999999" defaultValue="1" required /></label>
+        <LotColorFields />
 
         <label>Data da compra<input name="date" type="date" defaultValue={new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date())} required /></label>
         <label>Número da nota (opcional)<input name="invoiceNumber" maxLength={44} /></label>
@@ -604,7 +603,7 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
         <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><input type="hidden" name="stockView" value={view} /><input type="hidden" name="stockSearch" value={query} />
         <StockFields units={storeList(state)} initialStore={filter}
           products={state.products.map(({ id, name, sku }) => ({ id, name, sku }))}
-          lots={state.stockLots.map(({ purchaseId, productId, store, color, quantity, supplier }) => ({ purchaseId, productId, store, color, quantity, supplier }))} />
+          lots={state.stockLots.map(({ purchaseId, variantId, productId, store, color, quantity, supplier }) => ({ purchaseId, variantId, productId, store, color, quantity, supplier }))} />
         <div className="span-two"><Submit>Salvar operação</Submit></div>
       </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
     </CreateDialog>
@@ -630,7 +629,7 @@ function Stock({ state, filter, category, showPurchases, movementPage, balancePa
       {tableFilters}
       {lots.length ? <Table headers={["Produto", "Cor", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.slice(stockLots.start, stockLots.start + stockPageSize).map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
-        return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{lot.color ?? "Sem cor definida"}</td><td>{storeName(lot.store, state)}</td>
+        return <tr key={stockLotId(lot) + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{lot.color ?? "Sem cor definida"}</td><td>{storeName(lot.store, state)}</td>
           <td>{lot.supplier}</td><td>{lot.consigned ? "Consignado" : "Próprio"}{purchase && " · " + purchaseStatus(state, lot.purchaseId, purchase.acquisition)}</td><td>{lot.quantity} un.</td>{showPurchases && <td>{money(lot.unitCost)}{purchase && <small><Link className="back-link" href={adminUrl("compras", purchase.store) + "&ficha=" + purchase.id}>Abrir compra</Link></small>}</td>}</tr>;
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
       <StockPagination name="lotes em estoque" page={stockLots} href={(number) => pageUrl("lotesPagina", number, "lotes-estoque")} />

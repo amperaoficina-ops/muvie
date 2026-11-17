@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColor,
+  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -125,14 +125,21 @@ function editWithAudit(user: User, action: string, edit: (state: RetailState) =>
   });
 }
 
-function readLotColor(form: FormData) {
-  const color = choice(form, "lotColor", ["none", ...productColors]);
-  return color === "none" ? undefined : color;
+function readLotColors(form: FormData) {
+  const quantities = form.getAll("lotColorQuantity");
+  return form.getAll("lotColor").map((value, index) => {
+    const color = productColors.find((item) => item === value);
+    const quantity = quantities[index];
+    if ((!color && value !== "none") || typeof quantity !== "string" || !/^\d{1,6}$/.test(quantity)) {
+      throw new RetailError("Confira a cor e a quantidade de cada linha.");
+    }
+    return { color, quantity: Number(quantity) };
+  });
 }
 
 export async function savePurchaseColor(form: FormData) {
   await commit(form, "compras", "Cor do lote atualizada.", (state) => {
-    setPurchaseLotColor(state, value(form, "focus", 36), readLotColor(form));
+    setPurchaseLotColors(state, value(form, "focus", 36), readLotColors(form));
   });
 }
 
@@ -392,7 +399,7 @@ export async function savePurchase(form: FormData) {
       const date = value(form, "date", 10);
       if (!isCalendarDate(date) || date > localToday()) throw new RetailError("Informe uma data de compra válida, até hoje.");
       if (state.purchases.some((purchase) => purchase.id === id)) return;
-      const color = readLotColor(form);
+      const lotColors = readLotColors(form);
       let productId = value(form, "productId");
       if (productId === "new") {
         if (!canAccess(user, "produtos")) throw new RetailError("Sua conta não tem acesso ao cadastro de produtos.");
@@ -402,7 +409,7 @@ export async function savePurchase(form: FormData) {
         const category = choice(form, "category", productCategories);
         productId = randomUUID();
         state.products.push({
-          id: productId, colors: color ? [color] : [], sku, name: value(form, "name", 100), category, price: amount(form, "price"),
+          id: productId, colors: productColors.filter((color) => lotColors.some((row) => row.color === color)), sku, name: value(form, "name", 100), category, price: amount(form, "price"),
           specs: category === scooterCategory ? readScooterSpecs(form) : null,
           description: "", imageUrl: "", published: false, stock: {},
         });
@@ -415,7 +422,7 @@ export async function savePurchase(form: FormData) {
       if (supplierChoice && !supplier) throw new RetailError("Selecione um fornecedor cadastrado.");
       const product = state.products.find((item) => item.id === productId);
       recordPurchase(state, {
-        id, date, color, createdAt, openingBalance: form.get("openingBalance") === "on", store: choice(form, "store", storeIds(state)), productId,
+        id, date, lotColors, createdAt, openingBalance: form.get("openingBalance") === "on", store: choice(form, "store", storeIds(state)), productId,
         ...(product?.category === scooterCategory && { specs: readScooterSpecs(form) }),
         supplier: supplier?.name ?? "", supplierId: supplier?.id, contactId: value(form, "contactId", 36, false),
         quantity: units(form), unitCost: amount(form, "unitCost"),

@@ -2,9 +2,9 @@
 
 import { SearchSelect } from "./search-select";
 import { useState } from "react";
-import type { Product, StockLot, Store } from "@/domain/retail";
+import { stockLotId, type Product, type StockLot, type Store } from "@/domain/retail";
 
-export function StockFields({ units, products, lots, initialStore }: { units: readonly Store[]; initialStore: string; products: Pick<Product, "id" | "name" | "sku">[]; lots: Pick<StockLot, "purchaseId" | "productId" | "store" | "color" | "quantity" | "supplier">[] }) {
+export function StockFields({ units, products, lots, initialStore }: { units: readonly Store[]; initialStore: string; products: Pick<Product, "id" | "name" | "sku">[]; lots: Pick<StockLot, "purchaseId" | "variantId" | "productId" | "store" | "color" | "quantity" | "supplier">[] }) {
   const [mode, setMode] = useState("transferencia");
   const [store, setStore] = useState(initialStore);
   const [product, setProduct] = useState("");
@@ -21,7 +21,7 @@ export function StockFields({ units, products, lots, initialStore }: { units: re
     </select></label>
     {matching.length > 0 && <label>Lote e cor<SearchSelect name="stockOrigin" value={origin} onChange={(event) => setOrigin(event.target.value)}>
       <option value="">Automático · lotes mais antigos</option>
-      {matching.map((lot) => <option key={lot.purchaseId} value={lot.purchaseId}>{lot.color ?? "Sem cor definida"} · {lot.supplier} · {lot.quantity} un.</option>)}
+      {matching.map((lot) => <option key={stockLotId(lot)} value={stockLotId(lot)}>{lot.color ?? "Sem cor definida"} · {lot.supplier} · {lot.quantity} un.</option>)}
     </SearchSelect></label>}
 
     <label>Operação<SearchSelect name="mode" value={mode} onChange={(event) => setMode(event.target.value)}>

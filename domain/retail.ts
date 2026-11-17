@@ -22,8 +22,9 @@ export type LedgerEntry = {
   recurringFrom?: string;
   settlements: { id: string; amount: number; date: string; reversedOn?: string }[];
 };
-export type StockLot = { color?: ProductColor; purchaseId: string; productId: string; store: StoreId; quantity: number; unitCost: number; consigned: boolean; supplier: string; date: string };
+export type StockLot = { variantId?: string; color?: ProductColor; purchaseId: string; productId: string; store: StoreId; quantity: number; unitCost: number; consigned: boolean; supplier: string; date: string };
 export const stages = ["Novo", "Em atendimento", "Proposta", "Ganho", "Perdido"] as const;
+export const stockLotId = (lot: Pick<StockLot, "purchaseId" | "variantId">) => lot.variantId ?? lot.purchaseId;
 export const paymentMethods = ["Pix", "Cartão", "Dinheiro", "Financiamento", "Produto"] as const;
 export const productCategories = ["Scooter elétrica", "Acessório", "Peça"] as const;
 export type TaxRate = { id: string; name: string; basisPoints: number; defaultForSale: boolean };
@@ -60,7 +61,10 @@ export type Contact = {
 };
 export type Supplier = { id: string; name: string; cnpj?: string; location?: string; phone?: string; email?: string; notes?: string };
 
+export type PurchaseLotColor = { color?: ProductColor; quantity: number };
+
 export type Purchase = {
+  lotColors?: PurchaseLotColor[];
   color?: ProductColor;
   supplierId?: string;
   canceledAt?: string;
@@ -370,14 +374,14 @@ export function modelMarginRanking(state: RetailState, from: string, to: string,
 }
 
 function addLot(state: RetailState, lot: StockLot) {
-  const current = state.stockLots.find((item) => item.purchaseId === lot.purchaseId && item.store === lot.store);
+  const current = state.stockLots.find((item) => stockLotId(item) === stockLotId(lot) && item.store === lot.store);
   if (current) current.quantity += lot.quantity;
   else state.stockLots.push({ ...lot });
 }
 
 function takeLots(state: RetailState, productId: string, store: StoreId, units: number, origin?: string) {
   const result: StockLot[] = [];
-  const lots = state.stockLots.filter((item) => item.productId === productId && item.store === store && item.quantity > 0 && (!origin || item.purchaseId === origin))
+  const lots = state.stockLots.filter((item) => item.productId === productId && item.store === store && item.quantity > 0 && (!origin || stockLotId(item) === origin))
     .sort((a, b) => a.date.localeCompare(b.date));
   for (const lot of lots) {
     const quantity = Math.min(lot.quantity, units);
@@ -412,7 +416,7 @@ export function returnConsignedLot(state: RetailState, input: {
   id: string; purchaseId: string; productId: string; store: StoreId; quantity: number; createdAt: string;
 }) {
   if (state.movements.some((entry) => entry.id === input.id)) return;
-  const lot = state.stockLots.find((item) => item.purchaseId === input.purchaseId && item.productId === input.productId &&
+  const lot = state.stockLots.find((item) => stockLotId(item) === input.purchaseId && item.productId === input.productId &&
     item.store === input.store && item.consigned);
   if (!Number.isSafeInteger(input.quantity) || input.quantity < 1 || !lot || input.quantity > lot.quantity) {
     throw new RetailError("Informe uma quantidade dentro do saldo consignado deste lote.");
@@ -435,7 +439,7 @@ export function classifyLegacyConsignment(state: RetailState, lot: StockLot) {
 }
 
 export function stockLotForMovement(state: RetailState, productId: string, store: StoreId, purchaseId: string, quantity: number) {
-  const lot = state.stockLots.find((item) => item.productId === productId && item.store === store && item.purchaseId === purchaseId);
+  const lot = state.stockLots.find((item) => item.productId === productId && item.store === store && stockLotId(item) === purchaseId);
   if (!lot || lot.quantity < quantity) throw new RetailError("O lote selecionado não tem saldo suficiente nesta unidade.");
   return lot;
 }
@@ -477,6 +481,20 @@ export function saveSupplierRecord(state: RetailState, supplier: Supplier, editi
 
 type PurchaseInput = Omit<Purchase, "productName" | "sku" | "total"> & { due?: string };
 
+function validatePurchaseLotColors(quantity: number, rows: PurchaseLotColor[]) {
+  const colors = new Set(rows.map((row) => row.color ?? ""));
+  if (!rows.length || rows.length > 17 || colors.size !== rows.length ||
+      rows.some((row) => !Number.isSafeInteger(row.quantity) || row.quantity <= 0) ||
+      rows.reduce((sum, row) => sum + row.quantity, 0) !== quantity) {
+    throw new RetailError("Use uma linha por cor e confira se as quantidades somam o total da compra.");
+  }
+}
+
+function purchaseColorLots(base: Omit<StockLot, "quantity" | "color" | "variantId">, rows: PurchaseLotColor[]) {
+  return rows.map((row, index) => ({ ...base, ...row,
+    ...(rows.length > 1 ? { variantId: base.purchaseId + ":cor:" + (index + 1) } : {}) }));
+}
+
 export function recordPurchase(state: RetailState, input: PurchaseInput) {
   if (state.purchases.some((purchase) => purchase.id === input.id)) return;
   const product = productById(state, input.productId);
@@ -496,16 +514,23 @@ export function recordPurchase(state: RetailState, input: PurchaseInput) {
   if (input.acquisition === "a-pagar" && (!input.due || !isCalendarDate(input.due) || input.due < input.date)) {
     throw new RetailError("Informe um vencimento igual ou posterior à compra.");
   }
+  const rows = input.lotColors ?? [{ quantity: input.quantity, color: input.color }];
+  validatePurchaseLotColors(input.quantity, rows);
+  const lots = purchaseColorLots({ purchaseId: input.id, productId: product.id, store: input.store,
+    unitCost: input.unitCost, consigned: input.acquisition === "consignada", supplier, date: input.date }, rows);
   if (input.openingBalance) {
-    classifyLegacyConsignment(state, { purchaseId: input.id, productId: product.id, store: input.store,
-      quantity: input.quantity, unitCost: input.unitCost, consigned: input.acquisition === "consignada", supplier, date: input.date, color: input.color });
+    const tracked = state.stockLots.filter((lot) => lot.productId === product.id && lot.store === input.store)
+      .reduce((sum, lot) => sum + lot.quantity, 0);
+    if (input.quantity > (product.stock[input.store] ?? 0) - tracked) {
+      throw new RetailError("A quantidade supera o saldo avulso desta unidade.");
+    }
   } else {
     changeStock(state, product.id, input.store, input.quantity, "Compra · " + supplier, input.id + "-in", input.createdAt, input.id);
-    addLot(state, { purchaseId: input.id, productId: product.id, store: input.store, quantity: input.quantity,
-      unitCost: input.unitCost, consigned: input.acquisition === "consignada", supplier, date: input.date, color: input.color });
   }
+  for (const lot of lots) addLot(state, lot);
   const { due, ...purchase } = input;
-  state.purchases.unshift({ ...purchase, supplier, total, productName: product.name, sku: product.sku });
+  state.purchases.unshift({ ...purchase, supplier, total, productName: product.name, sku: product.sku,
+    color: rows.length === 1 ? rows[0].color : undefined });
   if (!input.openingBalance && input.acquisition && input.acquisition !== "consignada") {
     state.ledger.unshift({
       id: input.id + "-payable", store: input.store, name: "Compra · " + supplier, kind: "estoque", direction: "out",
@@ -536,7 +561,7 @@ export function recordSale(state: RetailState, input: SaleInput, gift = false) {
   }
   const lots = state.stockLots.filter((lot) => lot.productId === product.id && lot.store === input.store && lot.quantity > 0);
   const legacyUnits = (product.stock[input.store] ?? 0) - lots.reduce((sum, lot) => sum + lot.quantity, 0);
-  const selectedLot = lots.find((lot) => lot.purchaseId === input.origin);
+  const selectedLot = lots.find((lot) => stockLotId(lot) === input.origin);
   if (input.origin === "legacy" && legacyUnits < input.quantity) throw new RetailError("Saldo avulso insuficiente.");
   if (input.origin && input.origin !== "legacy" && (!selectedLot || selectedLot.quantity < input.quantity)) {
     throw new RetailError("O lote selecionado não pertence ao produto e à loja ou tem saldo insuficiente.");
@@ -565,7 +590,7 @@ export function recordSale(state: RetailState, input: SaleInput, gift = false) {
     kind: "comissao", direction: "out", amount: commission, date, due: "", settlements: [],
   });
   for (const lot of allocations.filter((item) => item.consigned)) state.ledger.unshift({
-    id: input.id + "-" + lot.purchaseId, saleId: input.id, store: input.store, name: "Repasse · " + lot.supplier,
+    id: input.id + "-" + stockLotId(lot), saleId: input.id, store: input.store, name: "Repasse · " + lot.supplier,
     kind: "consignacao", direction: "out", amount: lot.quantity * lot.unitCost, date, due: "", settlements: [],
   });
   if (contact) contact.stage = "Ganho";
@@ -667,7 +692,9 @@ export function cancelPurchase(state: RetailState, id: string, canceledAt: strin
     throw new RetailError("O saldo do lote está incompleto. Confira as vendas e saídas antes de cancelar a compra.");
   }
   const product = productById(state, purchase.productId);
-  if (!purchase.openingBalance && lots.some((lot) => (product.stock[lot.store] ?? 0) < lot.quantity)) {
+  const quantities = new Map<StoreId, number>();
+  for (const lot of lots) quantities.set(lot.store, (quantities.get(lot.store) ?? 0) + lot.quantity);
+  if (!purchase.openingBalance && [...quantities].some(([store, quantity]) => (product.stock[store] ?? 0) < quantity)) {
     throw new RetailError("O saldo da unidade é insuficiente para cancelar a compra.");
   }
   const payable = state.ledger.find((entry) => entry.id === id + "-payable");
@@ -678,21 +705,31 @@ export function cancelPurchase(state: RetailState, id: string, canceledAt: strin
   }
   if (payments.some((item) => item.date > date)) throw new RetailError("Há uma baixa com data posterior ao cancelamento.");
 
-  for (const lot of lots) {
-    if (!purchase.openingBalance) changeStock(state, lot.productId, lot.store, -lot.quantity,
-      "Cancelamento de compra · " + purchase.supplier, id + "-cancel-" + lot.store, canceledAt, id);
-    lot.quantity = 0;
+  if (!purchase.openingBalance) for (const [store, quantity] of quantities) {
+    changeStock(state, purchase.productId, store, -quantity, "Cancelamento de compra · " + purchase.supplier,
+      id + "-cancel-" + store, canceledAt, id);
   }
+  for (const lot of lots) lot.quantity = 0;
   for (const payment of payments) payment.reversedOn = date;
   if (payable) payable.canceled = true;
   purchase.canceledAt = canceledAt;
 }
 
-export function setPurchaseLotColor(state: RetailState, id: string, color: ProductColor | undefined) {
+export function setPurchaseLotColors(state: RetailState, id: string, rows: PurchaseLotColor[]) {
   const purchase = state.purchases.find((item) => item.id === id && !item.canceledAt);
   if (!purchase) throw new RetailError("Compra ativa não encontrada.");
-  purchase.color = color;
-  for (const lot of state.stockLots) if (lot.purchaseId === id) lot.color = color;
+  validatePurchaseLotColors(purchase.quantity, rows);
+  const lots = state.stockLots.filter((lot) => lot.purchaseId === id && lot.quantity > 0);
+  const previouslySold = state.sales.some((sale) => sale.allocations?.some((lot) => lot.purchaseId === id));
+  if (previouslySold || lots.some((lot) => lot.store !== purchase.store) ||
+      lots.reduce((sum, lot) => sum + lot.quantity, 0) !== purchase.quantity) {
+    throw new RetailError("Para redistribuir as cores, todas as unidades do lote devem estar na loja de origem e sem histórico de venda.");
+  }
+  state.stockLots = state.stockLots.filter((lot) => lot.purchaseId !== id);
+  for (const lot of purchaseColorLots({ purchaseId: id, productId: purchase.productId, store: purchase.store,
+    unitCost: purchase.unitCost, consigned: purchase.acquisition === "consignada", supplier: purchase.supplier, date: purchase.date }, rows)) addLot(state, lot);
+  purchase.color = rows.length === 1 ? rows[0].color : undefined;
+  purchase.lotColors = rows;
 }
 
 export function productColorStock(lots: StockLot[]) {
@@ -802,7 +839,7 @@ export function cancelSale(state: RetailState, id: string, date: string, refundC
   }
   for (const lot of sale.allocations ?? []) {
     const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
-    addLot(state, purchase ? { ...lot, unitCost: purchase.unitCost, color: purchase.color } : lot);
+    addLot(state, purchase ? { ...lot, unitCost: purchase.unitCost, color: lot.color ?? (lot.variantId ? undefined : purchase.color) } : lot);
   }
   for (const entry of linked) entry.canceled = true;
   if (received) {

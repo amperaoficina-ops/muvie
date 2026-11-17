@@ -3,7 +3,7 @@
 import { CardPaymentFields } from "./card-payment-fields";
 import { SearchSelect } from "./search-select";
 import { useState } from "react";
-import { money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type CardMachine, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
+import { stockLotId, money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type CardMachine, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
 import { completePaymentAmounts, parseReais } from "@/domain/money-input";
 
 type Item = { key: number; productId: string; quantity: number; gift: boolean; origin: string; override?: string };
@@ -35,11 +35,11 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
     if (!product) continue;
     let remaining = item.quantity;
     let lotCost = 0;
-    for (const lot of availableLots.filter((lot) => lot.productId === item.productId && item.origin === lot.purchaseId)) {
-      const quantity = Math.min(remaining, Math.max(0, lot.quantity - (usedLots.get(lot.purchaseId) ?? 0)));
+    for (const lot of availableLots.filter((lot) => lot.productId === item.productId && item.origin === stockLotId(lot))) {
+      const quantity = Math.min(remaining, Math.max(0, lot.quantity - (usedLots.get(stockLotId(lot)) ?? 0)));
       lotCost += quantity * lot.unitCost;
       remaining -= quantity;
-      usedLots.set(lot.purchaseId, (usedLots.get(lot.purchaseId) ?? 0) + quantity);
+      usedLots.set(stockLotId(lot), (usedLots.get(stockLotId(lot)) ?? 0) + quantity);
     }
     const override = item.override?.trim() ? parseReais(item.override) : lotCost;
     if (remaining || override === null) missingCost = true;
@@ -83,7 +83,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
           <option value="sale">Venda</option><option value="gift">Brinde</option></SearchSelect></label>
         <label>Lote da compra<SearchSelect name="checkoutOrigin" required value={item.origin} onChange={(event) => patchItem(item.key, { origin: event.target.value, override: "" })}>
           <option value="">Selecione o lote</option>
-          {availableLots.filter((lot) => lot.productId === item.productId).map((lot) => <option key={lot.purchaseId} value={lot.purchaseId}>{lot.color ?? "Sem cor definida"} · {lot.consigned ? "Consignado" : "Próprio"} · {lot.supplier} · {lot.date.split("-").reverse().join("/")} · {lot.quantity} un.{showCost ? " · " + money(lot.unitCost) + "/un." : ""}</option>)}
+          {availableLots.filter((lot) => lot.productId === item.productId).map((lot) => <option key={stockLotId(lot)} value={stockLotId(lot)}>{lot.color ?? "Sem cor definida"} · {lot.consigned ? "Consignado" : "Próprio"} · {lot.supplier} · {lot.date.split("-").reverse().join("/")} · {lot.quantity} un.{showCost ? " · " + money(lot.unitCost) + "/un." : ""}</option>)}
         </SearchSelect></label>
         {showCost && <label>Ajustar custo unitário (R$)<input name="checkoutCost" inputMode="decimal" maxLength={32} placeholder="Usar custo do lote"
           value={item.override ?? ""} onChange={(event) => patchItem(item.key, { override: event.target.value })} /></label>}
