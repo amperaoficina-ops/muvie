@@ -680,6 +680,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "crm" && <CRM stage={params.etapa} error={params.erro} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
+            lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}
+            sellers={canAccess(user, "financeiro") ? state.staff.filter((seller) => seller.active).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps })) : []}
             products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))} />}
           {active.id === "taxas" && <CardSettings state={state} />}
           {active.id === "impostos" && <TaxSettings rates={state.taxRates ?? []} />}

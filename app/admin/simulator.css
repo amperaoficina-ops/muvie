@@ -12,7 +12,7 @@
 .simulator-summary dt small { display: block; margin-top: .2rem; }
 .simulator-summary dd { text-align: right; }
 .simulator-summary form > .button { width: 100%; }
-.simulator-finance summary { cursor: pointer; font-size: .9rem; font-weight: 700; }
+.simulator-finance dl > div:last-child { border-top: 1px solid #dbe0e8; margin-top: .25rem; padding-top: .55rem; }
 .simulator-finance dl { margin-top: .55rem; }
 @media (min-width: 961px) { .simulator-summary { position: sticky; top: 1rem; } }
 @media (max-width: 960px) { .admin-shell .simulator-layout { grid-template-columns: minmax(0, 1fr); } }

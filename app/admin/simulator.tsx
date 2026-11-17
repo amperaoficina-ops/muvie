@@ -2,19 +2,22 @@
 
 import "./simulator.css";
 import { useState } from "react";
-import { money, paymentMethods, percentageAmount, type Store, type CardRate, type TaxRate } from "@/domain/retail";
+import { money, paymentMethods, percentageAmount, type Store, type CardRate, type TaxRate, type StockLot, type Staff } from "@/domain/retail";
 import { completePaymentAmounts, parseReais } from "@/domain/money-input";
 import { proposalQuote, type ProposalProduct } from "@/domain/proposal";
 
-export function Simulator({ products, rates, initialStore, stores, taxRates, showFinance }: {
+export function Simulator({ products, rates, initialStore, stores, taxRates, showFinance, lots, sellers }: {
   products: ProposalProduct[]; rates: CardRate[]; initialStore: string; stores: readonly Store[];
   taxRates: TaxRate[]; showFinance: boolean;
+  lots: Pick<StockLot, "productId" | "store" | "date" | "quantity" | "unitCost">[];
+  sellers: Pick<Staff, "id" | "name" | "store" | "commissionBps">[];
 }) {
   const [store, setStore] = useState(initialStore);
   const [items, setItems] = useState([{ productId: "", quantity: "1" }]);
   const [payments, setPayments] = useState([{ method: "Pix", amount: "", rateId: rates[0]?.id ?? "" }]);
   const [discount, setDiscount] = useState("");
   const [customer, setCustomer] = useState("");
+  const [sellerId, setSellerId] = useState("");
   const [taxMode, setTaxMode] = useState("");
   const [manualTax, setManualTax] = useState("");
   const available = products.filter((item) => item.stock[store] > 0 && item.price > 0);
@@ -26,11 +29,24 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
   const rate = taxRates.find((item) => item.id === taxMode) ?? taxRates.find((item) => item.defaultForSale);
   const tax = taxMode === "manual" ? parseReais(manualTax) : percentageAmount(quote?.total ?? 0, rate?.basisPoints ?? 0);
 
+  const seller = sellers.find((item) => item.id === sellerId && item.store === store);
+  const commission = percentageAmount(quote?.total ?? 0, seller?.commissionBps ?? 0);
+  const required = new Map<string, number>();
+  if (quote) for (const item of items) required.set(item.productId, (required.get(item.productId) ?? 0) + Number(item.quantity));
+  let productCost = 0;
+  for (const lot of lots.filter((item) => item.store === store).sort((a, b) => a.date.localeCompare(b.date))) {
+    const needed = required.get(lot.productId) ?? 0;
+    const quantity = Math.min(needed, lot.quantity);
+    productCost += quantity * lot.unitCost;
+    required.set(lot.productId, needed - quantity);
+  }
+  const missingCost = [...required.values()].some((quantity) => quantity > 0);
+
   return <div className="operation-grid simulator-layout">
     <section className="panel">
       <div className="panel-title"><h2>Monte a proposta</h2></div>
       <div className="admin-form simulator-form">
-        <label>Unidade<select value={store} onChange={(event) => { setStore(event.target.value); setItems([{ productId: "", quantity: "1" }]); }}>
+        <label>Unidade<select value={store} onChange={(event) => { setStore(event.target.value); setSellerId(""); setItems([{ productId: "", quantity: "1" }]); }}>
           {stores.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
         </select></label>
         <label>Nome do cliente (opcional)<input value={customer} maxLength={100} onChange={(event) => setCustomer(event.target.value)} /></label>
@@ -65,6 +81,10 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
           <button type="button" className="button" disabled={payments.length >= 10} onClick={() => setPayments([...payments, { method: "Pix", amount: "", rateId: rates[0]?.id ?? "" }])}>Combinar pagamento</button>
         </fieldset>
         {showFinance && <>
+          <label>Vendedor (opcional)<select value={sellerId} onChange={(event) => setSellerId(event.target.value)}>
+            <option value="">Sem vendedor</option>
+            {sellers.filter((seller) => seller.store === store).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
+          </select></label>
           <label>Imposto<select value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
             <option value="">Padrão da venda</option>
             {taxRates.map((item) => <option value={item.id} key={item.id}>{item.name} · {item.basisPoints / 100}%</option>)}
@@ -90,11 +110,18 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
           {payments.map((payment, index) => <div key={index}><input type="hidden" name="method" value={payment.method} /><input type="hidden" name="amount" value={amounts[index]} /><input type="hidden" name="rate" value={payment.rateId} /></div>)}
           <button type="submit" className="button yellow">Baixar PDF da proposta</button>
         </form>
-        {showFinance && <details className="simulator-finance"><summary>Detalhes financeiros</summary><dl>
-          <div><dt>Taxa de cartão</dt><dd>{money(quote.fees)}</dd></div>
-          <div><dt>Imposto estimado</dt><dd>{tax == null || tax > quote.total ? "Confira o valor" : money(tax)}</dd></div>
-          {tax != null && tax <= quote.total && <div><dt>Líquido após taxas e imposto</dt><dd>{money(quote.total - quote.fees - tax)}</dd></div>}
-        </dl></details>}
+        {showFinance && <section className="simulator-finance">
+          <h3>Detalhes financeiros</h3>
+          <dl>
+            <div><dt>Custo dos produtos</dt><dd>{missingCost ? "Custo incompleto" : money(productCost)}</dd></div>
+            <div><dt>Taxa de cartão</dt><dd>{money(quote.fees)}</dd></div>
+            <div><dt>Imposto estimado</dt><dd>{tax == null || tax > quote.total ? "Confira o valor" : money(tax)}</dd></div>
+            <div><dt>Comissão estimada</dt><dd>{money(commission)}</dd></div>
+            <div><dt><strong>Lucro estimado</strong></dt><dd>{missingCost || tax == null || tax > quote.total
+              ? "Pendente" : money(quote.total - productCost - quote.fees - tax - commission)}</dd></div>
+          </dl>
+          <small>{missingCost ? "Há unidades sem custo de lote cadastrado." : "Custo estimado pelos lotes mais antigos da unidade."}</small>
+        </section>}
         <small>Simulação sem reserva de estoque.</small>
       </div> : <p className="admin-empty">Selecione os produtos e confira as quantidades, o desconto e os pagamentos. Ao combinar formas, a soma deve bater com o total da proposta.</p>}
     </section>
