@@ -286,7 +286,7 @@ export function ledgerCashEvents(entry: LedgerEntry) {
 
 export function financialReport(state: RetailState, from: string, to: string, store?: StoreId) {
   const includes = (date: string) => date >= from && date <= to;
-  const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, taxes: 0, fixed: 0, salary: 0, expenses: 0, other: 0, distributions: 0, incoming: 0, outgoing: 0,
+  const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, taxes: 0, fixed: 0, salary: 0, expenses: 0, other: 0, distributions: 0, incoming: 0, outgoing: 0, purchaseOutflow: 0,
     payable: 0, receivable: 0, overdue: 0, missingSales: 0 };
   for (const sale of state.sales) {
     if (store && sale.store !== store) continue;
@@ -318,7 +318,9 @@ export function financialReport(state: RetailState, from: string, to: string, st
       if (entry.kind === "outra-receita") rows.other += entry.amount;
     }
     for (const event of ledgerCashEvents(entry)) {
-      if (includes(event.date)) rows[event.amount >= 0 ? "incoming" : "outgoing"] += Math.abs(event.amount);
+      if (!includes(event.date)) continue;
+      rows[event.amount >= 0 ? "incoming" : "outgoing"] += Math.abs(event.amount);
+      if (entry.kind === "estoque" && event.amount < 0) rows.purchaseOutflow -= event.amount;
     }
   }
   return { ...rows, result: rows.revenue + rows.other - rows.cost - rows.commissions - rows.cardFees - rows.taxes - rows.fixed - rows.salary - rows.expenses,
@@ -960,4 +962,98 @@ export function cashBalance(account: CashAccount, movements: ReturnType<typeof c
   if (date < account.openingDate) return 0;
   return account.openingBalance + movements.reduce((sum, movement) =>
     movement.accountId === account.id && movement.date <= date ? sum + movement.amount : sum, 0);
+}
+
+export const legacySaleCutoff = "2026-11-17T07:05:00.000Z";
+
+export function canCorrectLegacySale(sale: Sale) {
+  return !sale.canceledAt && Date.parse(sale.createdAt) < Date.parse(legacySaleCutoff);
+}
+
+export type HistoricalPayment = {
+  method: SalePayment["method"]; amount: number; fee: number; status: "received" | "pending";
+  date: string; assetDescription?: string; source?: string;
+};
+
+export function historicalPayments(state: RetailState, sale: Sale): HistoricalPayment[] {
+  const entries = new Map(state.ledger.filter((entry) => entry.saleId === sale.id && entry.kind === "venda" && !entry.canceled).map((entry) => [entry.id, entry]));
+  const payments = sale.payments ?? [{ method: sale.method, amount: sale.total, fee: sale.cardFees ?? 0, due: "", received: false, assetDescription: undefined }];
+  const saleDate = businessDate(new Date(sale.createdAt));
+  return payments.flatMap<HistoricalPayment>((payment, index) => {
+    const id = sale.id + (sale.payments ? "-payment-" + index : "-receipt");
+    const entry = entries.get(id);
+    const active = entry?.settlements.filter((item) => !item.reversedOn) ?? [];
+    let allocated = 0;
+    const rows: HistoricalPayment[] = active.map((item) => {
+      const before = allocated;
+      allocated += item.amount;
+      return { method: payment.method, amount: item.amount,
+        fee: Math.round(allocated * payment.fee / payment.amount) - Math.round(before * payment.fee / payment.amount),
+        status: "received", date: item.date, assetDescription: payment.assetDescription, source: item.id };
+    });
+    if (payment.amount > allocated) rows.push({ method: payment.method, amount: payment.amount - allocated,
+      fee: payment.fee - Math.round(allocated * payment.fee / payment.amount), status: "pending",
+      date: entry?.due || payment.due || saleDate, assetDescription: payment.assetDescription });
+    return rows;
+  });
+}
+
+export function correctHistoricalPayments(state: RetailState, id: string, rows: HistoricalPayment[], asOf: string) {
+  const sale = state.sales.find((item) => item.id === id);
+  if (!sale || !canCorrectLegacySale(sale)) throw new RetailError("Esta venda não está disponível para correção histórica.");
+  const entries = state.ledger.filter((entry) => entry.saleId === id && entry.kind === "venda");
+  if (entries.some((entry) => entry.canceled || entry.settlements.some((item) => item.reversedOn)) ||
+      tradeInAssets(state, sale.store).some((item) => item.saleId === id && item.resale)) {
+    throw new RetailError("Esta venda tem estorno registrado ou bem de troca revendido. O histórico não pode ser substituído.");
+  }
+  const date = businessDate(new Date(sale.createdAt));
+  if (!rows.length || rows.length > 30 || rows.some((row) => !paymentMethods.includes(row.method) ||
+      !Number.isSafeInteger(row.amount) || row.amount <= 0 || !Number.isSafeInteger(row.fee) || row.fee < 0 ||
+      row.fee > row.amount || (row.method !== "Cartão" && row.fee !== 0) ||
+      !isCalendarDate(row.date) || row.date < date || (row.status === "received" && row.date > asOf) ||
+      (row.method === "Produto" && !row.assetDescription?.trim()))) {
+    throw new RetailError("Confira valores, taxas e datas. Identifique o bem nos pagamentos em produto.");
+  }
+  if (rows.reduce((sum, row) => sum + row.amount, 0) !== sale.total) {
+    throw new RetailError("A soma das formas de pagamento deve ser igual ao total da venda.");
+  }
+
+  const previousEntryIds = new Set(entries.map((entry) => entry.id));
+  const previousAccounts = new Map(cashMovements(state).filter((move) => previousEntryIds.has(move.entryId) && !move.reversal)
+    .map((move) => [move.settlementId, (state.cashAssignments ?? []).find((item) => item.entryId === move.entryId && item.settlementId === move.settlementId)?.accountId]));
+  const sources = new Map(historicalPayments(state, sale).filter((row) => row.source).map((row) => [row.source, row]));
+  const rememberedAccounts = (state.cashAssignments ?? []).filter((item) => !previousEntryIds.has(item.entryId));
+  const replacements = rows.map((row, index): LedgerEntry => {
+    const entryId = id + "-payment-" + index;
+    const settlementId = entryId + "-received";
+    const source = sources.get(row.source);
+    const accountId = source?.method === row.method ? previousAccounts.get(row.source!) : undefined;
+    const account = state.cashAccounts?.find((item) => item.id === accountId && item.store === sale.store && item.openingDate <= row.date);
+    if (account && row.status === "received") rememberedAccounts.push({ entryId, settlementId, accountId: account.id });
+    return { id: entryId, saleId: id, store: sale.store, name: "Venda · " + row.method, kind: "venda",
+      direction: "in", amount: row.amount, date, due: row.date, cardFee: row.fee, nonCash: row.method === "Produto" || undefined,
+      settlements: row.status === "received" ? [{ id: settlementId, date: row.date, amount: row.amount }] : [] };
+  });
+  state.cashAssignments = rememberedAccounts;
+  state.ledger = [...replacements, ...state.ledger.filter((entry) => !previousEntryIds.has(entry.id))];
+  sale.method = rows[0].method;
+  sale.cardFees = rows.reduce((sum, row) => sum + row.fee, 0);
+  sale.payments = rows.map((row) => ({ method: row.method, amount: row.amount, fee: row.fee, due: row.date,
+    received: row.status === "received", assetDescription: row.method === "Produto" ? row.assetDescription : undefined }));
+}
+
+export function needsHistoricalPurchasePayment(state: RetailState, purchase: Purchase) {
+  return !purchase.canceledAt && !purchase.openingBalance && purchase.acquisition !== "consignada" &&
+    purchase.acquisition !== "a-pagar" && purchase.total > 0 &&
+    !state.ledger.some((entry) => entry.id === purchase.id + "-payable");
+}
+
+export function registerHistoricalPurchasePayment(state: RetailState, id: string, paidOn: string, asOf: string) {
+  const purchase = state.purchases.find((item) => item.id === id);
+  if (!purchase || !needsHistoricalPurchasePayment(state, purchase)) throw new RetailError("Compra indisponível para regularizar o pagamento.");
+  if (!isCalendarDate(paidOn) || paidOn < purchase.date || paidOn > asOf) throw new RetailError("Informe a data em que a compra foi paga.");
+  purchase.acquisition = "quitada";
+  state.ledger.unshift({ id: id + "-payable", store: purchase.store, name: "Compra · " + purchase.supplier, kind: "estoque",
+    direction: "out", amount: purchase.total, date: purchase.date, due: paidOn,
+    settlements: [{ id: id + "-paid", amount: purchase.total, date: paidOn }] });
 }

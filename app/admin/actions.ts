@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
+  correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -818,5 +818,40 @@ export async function recordCashAdjustment(form: FormData) {
     state.ledger.unshift({ id, store: account.store, kind: "ajuste", direction, name: value(form, "name", 120),
       amount: total, date, due: date, settlements: [{ id: settlementId, amount: total, date }] });
     (state.cashAssignments ??= []).push({ entryId: id, settlementId, accountId: account.id });
+  });
+}
+
+export async function saveHistoricalPayments(form: FormData) {
+  await runAction(form, "vendas", "Pagamentos históricos corrigidos.", async (user) => {
+    if (!isDirector(user)) throw new RetailError("Somente a Diretoria pode corrigir pagamentos antigos.");
+    await editWithAudit(user, "Corrige pagamentos históricos da venda " + value(form, "focus", 36), (state) => {
+      const id = value(form, "focus", 36);
+      const count = Number(value(form, "historyCount", 2));
+      if (!Number.isInteger(count) || count < 1 || count > 30 || form.get("confirmed") !== "on") {
+        throw new RetailError("Confira as formas de pagamento e confirme a correção.");
+      }
+      correctHistoricalPayments(state, id, Array.from({ length: count }, (_, index) => {
+        const method = choice(form, "historyMethod" + index, paymentMethods);
+        return {
+          method,
+          amount: amount(form, "historyAmount" + index),
+          fee: method === "Cartão" ? amount(form, "historyFee" + index) : 0,
+          status: choice(form, "historyStatus" + index, ["received", "pending"]),
+          date: value(form, "historyDate" + index, 10),
+          assetDescription: value(form, "historyAsset" + index, 140, false),
+          source: value(form, "historySource" + index, 180, false),
+        };
+      }), localToday());
+    });
+  });
+}
+
+export async function saveHistoricalPurchasePayment(form: FormData) {
+  await runAction(form, "compras", "Pagamento histórico registrado no caixa.", async (user) => {
+    if (!isDirector(user)) throw new RetailError("Somente a Diretoria pode regularizar pagamentos antigos.");
+    await editWithAudit(user, "Registra pagamento histórico da compra " + value(form, "focus", 36), (state) => {
+      if (form.get("confirmed") !== "on") throw new RetailError("Confirme que a compra já foi paga.");
+      registerHistoricalPurchasePayment(state, value(form, "focus", 36), requiredDate(form, "paidOn"), localToday());
+    });
   });
 }

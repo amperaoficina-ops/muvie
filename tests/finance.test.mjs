@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  cashBalance, cashMovements, balanceDue, cancelSale, emptyRetailState, financialReport, postMonthlyCosts, recordPurchase,
+  correctHistoricalPayments, historicalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, balanceDue, cancelSale, emptyRetailState, financialReport, postMonthlyCosts, recordPurchase,
   recordSale, reverseSettlement, salesRanking, settleEntry, transferStock,
 } from "../domain/retail.ts";
 
@@ -131,4 +131,41 @@ test("caixa separa unidades, respeita abertura e direciona recebimento por forma
   assert.deepEqual(rows.map((row) => row.accountId), [undefined, "bank", "drawer", undefined]);
   assert.equal(cashBalance(state.cashAccounts[1], rows, date), 0);
   assert.equal(cashBalance(state.cashAccounts[1], rows, "2026-11-08"), 700);
+});
+
+test("correção histórica divide Pix e cartão e substitui as baixas sem mexer no estoque", () => {
+  const state = fixture();
+  recordPurchase(state, { ...purchase, store: sale.store, acquisition: "quitada" });
+  recordSale(state, { ...sale, receive: { mode: "received" } });
+  const stock = structuredClone(state.products[0].stock);
+  const movements = structuredClone(state.movements);
+  assert.deepEqual(historicalPayments(state, state.sales[0]).map(({ method, amount }) => [method, amount]), [["Pix", 490000]]);
+  const rows = [
+    { method: "Pix", amount: 190000, fee: 0, status: "received", date },
+    { method: "Cartão", amount: 300000, fee: 9000, status: "received", date: "2026-11-09" },
+  ];
+  assert.throws(() => correctHistoricalPayments(state, sale.id, rows.slice(1), "2026-11-10"), /soma/);
+  correctHistoricalPayments(state, sale.id, rows, "2026-11-10");
+  correctHistoricalPayments(state, sale.id, rows, "2026-11-10");
+  assert.equal(financialReport(state, date, "2026-11-10", sale.store).incoming, 481000);
+  assert.equal(state.sales[0].cardFees, 9000);
+  assert.equal(state.ledger.filter((entry) => entry.kind === "venda").length, 2);
+  assert.deepEqual(state.products[0].stock, stock);
+  assert.deepEqual(state.movements, movements);
+  state.sales[0].createdAt = "2026-11-18T12:00:00Z";
+  assert.throws(() => correctHistoricalPayments(state, sale.id, rows, "2026-11-20"), /histórica/);
+});
+
+test("compra antiga só entra nas saídas após confirmar baixa pela data e unidade corretas", () => {
+  const state = fixture();
+  recordPurchase(state, { ...purchase, acquisition: undefined });
+  const stock = structuredClone(state.products[0].stock);
+  const paidOn = "2026-11-10";
+  assert.equal(financialReport(state, date, paidOn, store).outgoing, 0);
+  registerHistoricalPurchasePayment(state, purchase.id, paidOn, paidOn);
+  assert.throws(() => registerHistoricalPurchasePayment(state, purchase.id, paidOn, paidOn), /indisponível/);
+  assert.equal(financialReport(state, date, date, store).outgoing, 0);
+  assert.equal(financialReport(state, paidOn, paidOn, store).purchaseOutflow, 600000);
+  assert.equal(financialReport(state, paidOn, paidOn, "sao-jose").outgoing, 0);
+  assert.deepEqual(state.products[0].stock, stock);
 });

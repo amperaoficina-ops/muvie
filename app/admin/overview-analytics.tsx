@@ -42,7 +42,7 @@ export function OverviewAnalytics({ state, store, from, to, access }: {
       <Bars title="Valor médio por venda" rows={[["Ticket médio", data.average]]} format={money} />
     </Group>}
     {finance && <Group title="Financeiro do período">
-      <Bars title="Entradas e saídas de caixa" rows={[["Entradas", finance.incoming], ["Saídas", finance.outgoing], ["Caixa líquido", finance.cash]]} format={money} keepZeros />
+      <Bars title="Entradas e saídas de caixa" rows={[["Entradas", finance.incoming], ["Saídas totais", finance.outgoing], ["Das saídas, compras pagas", finance.purchaseOutflow], ["Caixa líquido", finance.cash]]} format={money} keepZeros />
       <Bars title="Custos e deduções do DRE" rows={[
         ["Custo dos produtos vendidos", finance.cost], ["Taxas de cartão", finance.cardFees], ["Impostos", finance.taxes],
         ["Comissões", finance.commissions], ["Salários", finance.salary], ["Fixos", finance.fixed], ["Outras despesas", finance.expenses],

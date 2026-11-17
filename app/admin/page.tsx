@@ -1,3 +1,4 @@
+import { HistoricalPayments } from "./historical-payments";
 import { Cash } from "./cash";
 import { LotColorFields } from "./product-color-fields";
 import { ModelCard } from "../catalog";
@@ -18,10 +19,10 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, businessDate, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
+  canCorrectLegacySale, historicalPayments, needsHistoricalPurchasePayment, balanceDue, businessDate, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
+import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -379,6 +380,16 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
                 <h3>Documentos</h3>
                 <InvoiceBox owner="purchase" id={purchase.id} filter={filter} invoices={invoices} />
               </section>
+              {canCancel && needsHistoricalPurchasePayment(state, purchase) && <details className="sale-detail-card">
+                <summary>Registrar pagamento de compra antiga</summary>
+                <form className="admin-form" action={saveHistoricalPurchasePayment}>
+                  <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
+                  <p className="form-note span-two">Use se os {money(purchase.total)} já saíram desta unidade. O estoque não será alterado.</p>
+                  <label>Data em que foi paga<input type="date" name="paidOn" defaultValue={purchase.date} min={purchase.date} max={businessDate()} required /></label>
+                  <label className="checkbox"><input type="checkbox" name="confirmed" required /> Confirmo que a compra foi paga</label>
+                  <div className="span-two"><Submit>Confirmar pagamento</Submit></div>
+                </form>
+              </details>}
               {canCancel && !purchase.canceledAt && <div>
                 <DetailsDialog id={"cancelar-compra-" + purchase.id} title="Cancelar compra?" trigger="Cancelar compra" danger>
                   <form className="admin-form" action={reversePurchase}>
@@ -795,6 +806,8 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
               <p>Desconta custos dos itens e brindes, taxas, impostos e comissão.</p>
             </div></div>}
           </section>
+          {canEditCosts && canCorrectLegacySale(sale) && <HistoricalPayments rows={historicalPayments(state, sale)}
+            total={sale.total} saleId={sale.id} filter={filter} date={businessDate(new Date(sale.createdAt))} />}
           <SaleDocuments sale={sale} filter={filter} invoices={invoices ?? []} />
           {canEditCosts && !sale.canceledAt && <details className="sale-detail-card sale-documents"><summary>Editar custos</summary>
         <form action={saveSaleCosts} className="invoice-form">
