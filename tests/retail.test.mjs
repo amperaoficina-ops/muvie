@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, returnConsignedLot, stockComposition, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, recordPurchase, recordSale, returnConsignedLot, stockComposition, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -244,4 +244,29 @@ test("devolução consignada baixa apenas o lote escolhido e não gera lançamen
   assert.equal(state.stockLots.find((lot) => lot.purchaseId === "lote-b").quantity, 0);
   assert.equal(state.movements.length, 1);
   assert.equal(state.ledger.length, 0);
+});
+
+test("cancelamento de compra quitada estorna o caixa e retira o lote das unidades uma vez", () => {
+  const state = fixture();
+  recordPurchase(state, { id: "compra", productId: "scooter", store: "sao-jose", supplier: "Fornecedor",
+    date: "2026-11-07", createdAt: date, quantity: 2, unitCost: 10000, acquisition: "quitada" });
+  transferStock(state, "scooter", "sao-jose", "palhoca", 1, "transferencia", date);
+  const snapshot = structuredClone(state);
+  assert.throws(() => cancelPurchase(state, "compra", date), /pagamentos/);
+  assert.deepEqual(state, snapshot);
+  cancelPurchase(state, "compra", date, true);
+  cancelPurchase(state, "compra", date, true);
+  assert.deepEqual(state.products[0].stock, { "sao-jose": 3, palhoca: 1 });
+  assert.equal(state.movements.filter((row) => row.id.startsWith("compra-cancel-")).length, 2);
+  assert.equal(financialReport(state, "2026-11-07", "2026-11-07").cash, 0);
+});
+
+test("cancelamento preserva o saldo anterior e bloqueia lotes com unidades já baixadas", () => {
+  const state = fixture();
+  linkOldStock(state, "lote", "scooter", "palhoca", 10000);
+  changeStock(state, "scooter", "palhoca", -1, "Saída", "saida", date);
+  assert.throws(() => cancelPurchase(state, "lote", date), /incompleto/);
+  linkOldStock(state, "lote-sj", "scooter", "sao-jose", 10000);
+  cancelPurchase(state, "lote-sj", date);
+  assert.equal(state.products[0].stock["sao-jose"], 3);
 });

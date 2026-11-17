@@ -18,7 +18,7 @@ import {
   balanceDue, money, saleNetProfit, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier } from "./actions";
+import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -269,8 +269,8 @@ function Products({ products, filter, query, focus, error, category }: { product
   </>;
 }
 
-function Purchases({ state, filter, invoices, focus, productId, query, category, error, canCreateProduct }: {
-  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; productId?: string; query: string; category?: Product["category"]; error?: string; canCreateProduct: boolean;
+function Purchases({ state, filter, invoices, focus, productId, query, category, error, canCreateProduct, canCancel }: {
+  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; productId?: string; query: string; category?: Product["category"]; error?: string; canCreateProduct: boolean; canCancel: boolean;
 }) {
   const productCategoriesById = new Map(state.products.map((item) => [item.id, item.category]));
   const purchases = state.purchases.filter((purchase) => (!filter || purchase.store === filter) && (!category || productCategoriesById.get(purchase.productId) === category) && matchesSearch(query, purchase.productName, purchase.sku, purchase.supplier));
@@ -307,12 +307,23 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
               <div key={key}><dt>{label}</dt><dd>{purchase.specs?.[key]}</dd></div>
             ))}</dl>}
           </div>
-          <form className="admin-form" action={savePurchaseCost}>
+          {!purchase.canceledAt && <form className="admin-form" action={savePurchaseCost}>
             <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
             <label>Custo unitário do lote (R$)<input name="unitCost" inputMode="decimal" required defaultValue={(purchase.unitCost / 100).toFixed(2).replace(".", ",")} /></label>
             <div><Submit>Atualizar custo do lote</Submit></div>
             <p className="form-note span-two">As vendas já registradas mantêm seus custos. Ajuste-as pelo histórico de vendas, se necessário.</p>
-          </form>
+          </form>}
+          {canCancel && !purchase.canceledAt && <details className="sale-detail-card cancel-sale">
+            <summary>Cancelar compra</summary>
+            <form action={reversePurchase}>
+              <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
+              <p>{purchase.openingBalance ? "O vínculo com o lote será removido e o saldo das unidades será mantido." : "A entrada será revertida nas unidades onde o lote está disponível."}</p>
+              {state.ledger.some((entry) => entry.id === purchase.id + "-payable" && entry.settlements.some((item) => !item.reversedOn)) &&
+                <label className="checkbox"><input type="checkbox" name="paymentReversed" required /> O pagamento foi devolvido ou lançado por engano.</label>}
+              <Submit variant="danger">Confirmar cancelamento</Submit>
+            </form>
+          </details>}
+          {purchase.canceledAt && <p className="form-note">Cancelada em {dateLabel(purchase.canceledAt)}</p>}
           <InvoiceBox owner="purchase" id={purchase.id} filter={filter} invoices={invoices} />
           </div></DetailsDialog></td>
         </tr>
@@ -378,6 +389,7 @@ function Suppliers({ suppliers, focus, error, success }: { suppliers: Supplier[]
 }
 
 function purchaseStatus(state: RetailState, id: string, condition?: string) {
+  if (state.purchases.some((purchase) => purchase.id === id && purchase.canceledAt)) return "Cancelada";
   if (condition === "consignada") return "Consignada";
   if (condition === "quitada") return "Quitada";
   if (condition === "a-pagar") {
@@ -720,7 +732,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
       ...sale, date: dateLabel(sale.createdAt), kind: "Venda", tab: "vendas" as const, owner: "sale", canceled: !!sale.canceledAt,
     })),
     ...state.purchases.filter((purchase) => showPurchases && purchase.contactId === contact.id).map((purchase) => ({
-      ...purchase, date: calendarLabel(purchase.date), kind: "Compra", tab: "compras" as const, owner: "purchase", canceled: false,
+      ...purchase, date: calendarLabel(purchase.date), kind: "Compra", tab: "compras" as const, owner: "purchase", canceled: !!purchase.canceledAt,
     })),
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (!records.length) return <p className="form-note">Compras e vendas vinculadas a este cliente aparecem aqui.</p>;
@@ -834,7 +846,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
-          {active.id === "compras" && <Purchases canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
+          {active.id === "compras" && <Purchases canCancel={user.role === "admin" || isPrimaryAdmin(user)} canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}

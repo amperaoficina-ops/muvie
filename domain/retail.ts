@@ -44,6 +44,7 @@ export type Supplier = { id: string; name: string; phone?: string; email?: strin
 
 export type Purchase = {
   supplierId?: string;
+  canceledAt?: string;
   id: string; store: StoreId; productId: string; productName: string; sku: string;
   supplier: string; contactId: string; quantity: number; unitCost: number; total: number;
   date: string; invoiceNumber: string; notes: string; createdAt: string;
@@ -551,9 +552,39 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
   Object.assign(state, draft);
 }
 
-export function updatePurchaseCost(state: RetailState, id: string, unitCost: number) {
+export function cancelPurchase(state: RetailState, id: string, canceledAt: string, paymentReversed = false) {
   const purchase = state.purchases.find((item) => item.id === id);
   if (!purchase) throw new RetailError("Compra não encontrada.");
+  if (purchase.canceledAt) return;
+  const lots = state.stockLots.filter((lot) => lot.purchaseId === id && lot.productId === purchase.productId && lot.quantity > 0);
+  if (lots.reduce((sum, lot) => sum + lot.quantity, 0) !== purchase.quantity) {
+    throw new RetailError("O saldo do lote está incompleto. Confira as vendas e saídas antes de cancelar a compra.");
+  }
+  const product = productById(state, purchase.productId);
+  if (!purchase.openingBalance && lots.some((lot) => (product.stock[lot.store] ?? 0) < lot.quantity)) {
+    throw new RetailError("O saldo da unidade é insuficiente para cancelar a compra.");
+  }
+  const payable = state.ledger.find((entry) => entry.id === id + "-payable");
+  const payments = payable?.settlements.filter((item) => !item.reversedOn) ?? [];
+  const date = businessDate(new Date(canceledAt));
+  if (payments.length && !paymentReversed) {
+    throw new RetailError("Confirme que os pagamentos da compra foram devolvidos ou lançados por engano.");
+  }
+  if (payments.some((item) => item.date > date)) throw new RetailError("Há uma baixa com data posterior ao cancelamento.");
+
+  for (const lot of lots) {
+    if (!purchase.openingBalance) changeStock(state, lot.productId, lot.store, -lot.quantity,
+      "Cancelamento de compra · " + purchase.supplier, id + "-cancel-" + lot.store, canceledAt, id);
+    lot.quantity = 0;
+  }
+  for (const payment of payments) payment.reversedOn = date;
+  if (payable) payable.canceled = true;
+  purchase.canceledAt = canceledAt;
+}
+
+export function updatePurchaseCost(state: RetailState, id: string, unitCost: number) {
+  const purchase = state.purchases.find((item) => item.id === id);
+  if (!purchase || purchase.canceledAt) throw new RetailError("Compra ativa não encontrada.");
   const total = unitCost * purchase.quantity;
   if (!Number.isSafeInteger(total) || unitCost <= 0) throw new RetailError("Informe um custo unitário positivo.");
   if (unitCost === purchase.unitCost) return;

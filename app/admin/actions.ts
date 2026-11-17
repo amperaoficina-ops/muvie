@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, updateSaleCosts, updatePurchaseCost,
+  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, updateSaleCosts, updatePurchaseCost,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -543,6 +543,16 @@ export async function saveTaxRate(form: FormData) {
     const fields = { name, basisPoints, defaultForSale };
     if (current) Object.assign(current, fields);
     else rates.push({ id: newId, ...fields });
+  });
+}
+
+export async function reversePurchase(form: FormData) {
+  const canceledAt = new Date().toISOString();
+  await runAction(form, "compras", "Compra cancelada.", async (user) => {
+    if (user.role !== "admin" && !isPrimaryAdmin(user)) throw new RetailError("Somente a Diretoria pode cancelar compras.");
+    await editWithAudit(user, "Compra cancelada.", (state) => {
+      cancelPurchase(state, value(form, "focus", 36), canceledAt, form.get("paymentReversed") === "on");
+    });
   });
 }
 
