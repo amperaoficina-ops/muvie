@@ -8,6 +8,7 @@ export function CommitmentFrequency() {
   return <>
     <label>Frequência<SearchSelect name="frequency" value={frequency} onChange={(event) => setFrequency(event.target.value)}>
       <option value="monthly">Mensal · lançamento único</option>
+      <option value="standalone">Avulso · eventual</option>
       <option value="fixed">Fixo · repetir todo mês</option>
     </SearchSelect></label>
     {frequency === "fixed" && <label>Total de meses (inclui o primeiro)

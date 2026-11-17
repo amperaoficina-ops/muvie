@@ -15,7 +15,7 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, money, saleNetProfit, tradeInAssets, productCategories, stages, stockComposition, storeName, storeList,
+  balanceDue, isCalendarDate, money, saleNetProfit, tradeInAssets, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
 import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale } from "./actions";
@@ -48,7 +48,7 @@ const nav = [
   { id: "crm", label: "Clientes / CRM", icon: "users", description: "Consulte fichas, histórico de compras e vendas, documentos e retornos por unidade." },
   { id: "simulador", label: "Simular venda", icon: "bolt", description: "Monte uma proposta de cartão durante o atendimento com produtos em estoque." },
   { id: "impostos", label: "Impostos", icon: "bag", description: "Configure alíquotas e o imposto padrão das novas vendas." },
-  { id: "taxas", label: "Taxas de cartão", icon: "bag", description: "Cadastre e ajuste as condições de débito e crédito das maquininhas.", admin: true },
+  { id: "taxas", label: "Taxas e maquininhas", icon: "bag", description: "Cadastre e ajuste as condições de débito e crédito das maquininhas.", admin: true },
   { id: "usuarios", label: "Usuários", icon: "users", description: "Gerencie o acesso da equipe de atendimento.", admin: true },
   { id: "logs", label: "Log de ações", icon: "grid", description: "Confira as operações registradas e quem as realizou.", admin: true },
   { id: "consignados", label: "Consignados", icon: "box", description: "Acompanhe os lotes consignados disponíveis por unidade." },
@@ -804,7 +804,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; maquininha?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -815,11 +815,17 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const showSales = canAccess(user, "vendas");
   const showPurchases = canAccess(user, "compras");
   const period = reportPeriod(params.inicio, params.fim);
-  const commitmentKind = params.tipoCompromisso === "fixos" ? "fixos" : undefined;
+  const commitmentKind = ["fixos", "mensais", "avulsos"].find((item) => item === params.tipoCompromisso);
   const commitmentDeadline = ["mes", "atrasados", "a-vencer"].find((item) => item === params.prazoCompromisso);
+  const commitmentView = params.compromissosVisao === "pagos" ? "pagos" : undefined;
+  const paidFrom = params.baixaInicio && isCalendarDate(params.baixaInicio) ? params.baixaInicio : undefined;
+  const paidTo = params.baixaFim && isCalendarDate(params.baixaFim) ? params.baixaFim : undefined;
   const commitmentQuery = active.id === "compromissos" ? "&" + new URLSearchParams({
     ...(commitmentKind ? { tipoCompromisso: commitmentKind } : {}),
     ...(commitmentDeadline ? { prazoCompromisso: commitmentDeadline } : {}),
+    ...(commitmentView ? { compromissosVisao: commitmentView } : {}),
+    ...(paidFrom ? { baixaInicio: paidFrom } : {}),
+    ...(paidTo ? { baixaFim: paidTo } : {}),
   }) : "";
   const periodQuery = active.id === "financeiro" || active.id === "visao" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to }) : "";
   const showInvoices = ["compras", "vendas", "crm"].includes(active.id) || (active.id === "visao" && (showSales || showPurchases));
@@ -923,7 +929,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
-          {active.id === "compromissos" && <Commitments kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
+          {active.id === "compromissos" && <Commitments view={commitmentView} paidFrom={paidFrom} paidTo={paidTo} requestedPage={params.compromissosPagina} kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} machines={state.cardMachines} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
             lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}

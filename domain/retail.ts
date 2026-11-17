@@ -16,6 +16,7 @@ export type LedgerEntry = {
   id: string; store: StoreId; name: string; direction: "in" | "out";
   kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste";
   amount: number; date: string; due: string; saleId?: string; cardFee?: number; nonCash?: boolean; canceled?: boolean; manual?: boolean;
+  frequency?: "monthly" | "standalone";
   recurrence?: { months?: number; endedOn?: string; due: string };
   recurringFrom?: string;
   settlements: { id: string; amount: number; date: string; reversedOn?: string }[];

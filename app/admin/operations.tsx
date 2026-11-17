@@ -27,7 +27,7 @@ export function CardSettings({ state, machineId, error, canManage }: { state: Re
         <div className="panel-title"><h2>{selected.name}{selected.inactive ? " · Inativa" : ""}</h2>
           <div className="workspace-section-links">
             <a className="button yellow" href="#nova-taxa">＋ Adicionar taxa</a>
-            {canManage && <DetailsDialog key={selected.id} id={"maquininha-" + selected.id} title={selected.name} trigger="Editar nome da maquininha">
+            {canManage && <DetailsDialog key={selected.id} id={"maquininha-" + selected.id} title={selected.name} trigger="Editar">
               <form action={manageCardMachine} className="admin-form">
                 <input type="hidden" name="machineId" value={selected.id} />
                 <label className="span-two">Nome<input name="name" defaultValue={selected.name} required maxLength={70} /></label>

@@ -1,7 +1,7 @@
 export const modules = {
   visao: "Visão geral", produtos: "Produtos", estoque: "Estoque", compras: "Compras",
   vendas: "Vendas", financeiro: "Financeiro", compromissos: "Compromissos", lojas: "Administração das lojas", crm: "Clientes / CRM",
-  simulador: "Simular venda", taxas: "Taxas de cartão", impostos: "Impostos", usuarios: "Usuários", logs: "Log de ações",
+  simulador: "Simular venda", taxas: "Taxas e maquininhas", impostos: "Impostos", usuarios: "Usuários", logs: "Log de ações",
   bens: "Bens", fornecedores: "Fornecedores", funcionarios: "Funcionários", relatos: "Relatos da landing", consignados: "Consignados", catalogo: "Catálogo do site",
 } as const;
 export type Module = keyof typeof modules;

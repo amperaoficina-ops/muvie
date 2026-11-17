@@ -66,9 +66,13 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
   const category = form.get("stockCategory");
   if (tab === "estoque" && productCategories.some((item) => item === category)) params.set("categoria", String(category));
   if (tab === "compromissos") {
-    for (const key of ["tipoCompromisso", "prazoCompromisso"]) {
+    for (const key of ["tipoCompromisso", "prazoCompromisso", "compromissosVisao"]) {
       const filter = form.get(key);
       if (typeof filter === "string" && /^[a-z-]{1,30}$/.test(filter)) params.set(key, filter);
+    }
+    for (const key of ["baixaInicio", "baixaFim"]) {
+      const date = form.get(key);
+      if (typeof date === "string" && isCalendarDate(date)) params.set(key, date);
     }
   }
   if (tab === "taxas") {
@@ -481,7 +485,8 @@ export async function saveLedgerEntry(form: FormData) {
     const due = requiredDate(form, "due", true);
     const total = amount(form, "amount");
     if (total <= 0 || due < date) throw new RetailError("Informe valor positivo e vencimento a partir da data do lançamento.");
-    const fixed = form.get("frequency") === "fixed";
+    const frequency = choice(form, "frequency", ["fixed", "monthly", "standalone"]);
+    const fixed = frequency === "fixed";
     const duration = fixed ? value(form, "repeatMonths", 3, false) : "";
     const months = duration ? Number(duration) : undefined;
     if (months !== undefined && (!/^\d+$/.test(duration) || !Number.isInteger(months) || months < 1 || months > 120)) {
@@ -489,7 +494,7 @@ export async function saveLedgerEntry(form: FormData) {
     }
     state.ledger.unshift({ id, store: choice(form, "store", storeIds(state)), name: value(form, "name", 120),
       direction, kind: classification === "somente-caixa" ? "ajuste" : direction === "in" ? "outra-receita" : "despesa",
-      amount: total, date, due, settlements: [], manual: true, ...(fixed && { recurrence: { months, due } }) });
+      amount: total, date, due, settlements: [], manual: true, ...(fixed ? { recurrence: { months, due } } : { frequency }) });
   });
 }
 
@@ -507,6 +512,7 @@ export async function updateLedger(form: FormData) {
       return;
     }
     if (mode === "cancel") {
+      if (form.get("confirmed") !== "on") throw new RetailError("Confirme o cancelamento do compromisso.");
       if (!entry.manual || entry.settlements.some((payment) => !payment.reversedOn)) throw new RetailError("Só é possível cancelar um compromisso manual sem baixas ativas.");
       entry.canceled = true;
       return;

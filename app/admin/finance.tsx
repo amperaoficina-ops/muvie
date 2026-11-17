@@ -3,7 +3,7 @@ import { CreateDialog, DetailsDialog } from "./sale-dialog";
 import { SearchSelect } from "./search-select";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
-import { balanceDue, businessDate, financialReport, isCalendarDate, isFixedCommitment, money, modelMarginRanking, salesRanking, storeName, storeList,
+import { balanceDue, businessDate, financialReport, isCalendarDate, isFixedCommitment, settledAmount, money, modelMarginRanking, salesRanking, storeName, storeList,
   type Asset, type FixedCost, type LedgerEntry, type RetailState, type Staff, type StoreId } from "@/domain/retail";
 import { launchMonth, saveLedgerEntry, saveStoreItem, updateLedger } from "./actions";
 import { Submit } from "./submit";
@@ -220,31 +220,63 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
   </>;
 }
 
-type CommitmentFilters = { kind?: string; deadline?: string };
+type CommitmentFilters = { kind?: string; deadline?: string; view?: string; paidFrom?: string; paidTo?: string };
 
-function CommitmentFilterInputs({ kind, deadline }: CommitmentFilters) {
-  return <><input type="hidden" name="tipoCompromisso" value={kind ?? ""} /><input type="hidden" name="prazoCompromisso" value={deadline ?? ""} /></>;
+function commitmentFilterParams({ kind, deadline, view, paidFrom, paidTo }: CommitmentFilters) {
+  return {
+    ...(kind ? { tipoCompromisso: kind } : {}), ...(deadline ? { prazoCompromisso: deadline } : {}),
+    ...(view ? { compromissosVisao: view } : {}),
+    ...(paidFrom ? { baixaInicio: paidFrom } : {}), ...(paidTo ? { baixaFim: paidTo } : {}),
+  };
 }
 
-export function Commitments({ state, filter, createError, kind, deadline }: {
-  state: RetailState; filter: Filter; createError?: string;
+function CommitmentFilterInputs(filters: CommitmentFilters) {
+  return <>{Object.entries(commitmentFilterParams(filters)).map(([name, value]) =>
+    <input key={name} type="hidden" name={name} value={value} />)}</>;
+}
+
+export function Commitments({ state, filter, createError, kind, deadline, view, paidFrom, paidTo, requestedPage }: {
+  state: RetailState; filter: Filter; createError?: string; requestedPage?: string;
 } & CommitmentFilters) {
   const now = today();
+  const month = now.slice(0, 7);
   const soon = new Date(now + "T00:00:00Z");
   soon.setUTCDate(soon.getUTCDate() + 5);
   const limit = soon.toISOString().slice(0, 10);
   const entryId = randomUUID();
-  const entries = state.ledger.filter((item) => (!filter || item.store === filter) && balanceDue(item) > 0
-    && (kind !== "fixos" || isFixedCommitment(item))
-    && (deadline !== "mes" || (item.due || item.date).slice(0, 7) === now.slice(0, 7))
-    && (deadline !== "atrasados" || Boolean(item.due && item.due < now))
-    && (deadline !== "a-vencer" || Boolean(item.due && item.due >= now && item.due <= limit)))
-    .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+  const paid = view === "pagos";
+  const unitEntries = state.ledger.filter((item) => !item.canceled && (!filter || item.store === filter));
+  const monthlyOut = unitEntries.filter((item) => item.direction === "out" && (item.due || item.date).startsWith(month));
+  const stats = [
+    ["Total a pagar com vencimento neste mês", totalOf(monthlyOut, (item) => item.amount)],
+    ["Em aberto neste mês", totalOf(monthlyOut, balanceDue)],
+    ["Já baixado dos vencimentos deste mês", totalOf(monthlyOut, settledAmount)],
+    ["Em atraso · todos os meses", totalOf(unitEntries.filter((item) => item.direction === "out" && item.due && item.due < now), balanceDue)],
+  ] as const;
+  const lastPayment = (entry: LedgerEntry) => entry.settlements.reduce((last, payment) =>
+    !payment.reversedOn && payment.date > last ? payment.date : last, "");
+  const entryKind = (entry: LedgerEntry) => isFixedCommitment(entry) ? "fixos"
+    : entry.frequency === "monthly" || (entry.manual && !entry.frequency) ? "mensais" : "avulsos";
+  const entries = unitEntries.filter((item) => {
+    if (kind && entryKind(item) !== kind) return false;
+    if (paid) {
+      const date = lastPayment(item);
+      return balanceDue(item) === 0 && Boolean(date) && (!paidFrom || date >= paidFrom) && (!paidTo || date <= paidTo);
+    }
+    return balanceDue(item) > 0
+      && (deadline !== "mes" || (item.due || item.date).startsWith(month))
+      && (deadline !== "atrasados" || Boolean(item.due && item.due < now))
+      && (deadline !== "a-vencer" || Boolean(item.due && item.due >= now && item.due <= limit));
+  }).sort((a, b) => paid ? lastPayment(b).localeCompare(lastPayment(a)) : (a.due || "9999").localeCompare(b.due || "9999"));
+  const pageCount = Math.max(1, Math.ceil(entries.length / 15));
+  const requested = Number(requestedPage);
+  const page = Number.isSafeInteger(requested) ? Math.min(pageCount, Math.max(1, requested)) : 1;
+  const pageStart = (page - 1) * 15;
   const recurring = state.ledger.filter((entry) => entry.recurrence && !entry.recurrence.endedOn && (!filter || entry.store === filter));
-  const filters = { kind, deadline };
-  const href = (nextKind?: string, nextDeadline?: string) => "/admin?" + new URLSearchParams({
+  const filters = { kind, deadline, view, paidFrom, paidTo };
+  const href = (changes: CommitmentFilters = {}, nextPage?: number) => "/admin?" + new URLSearchParams({
     tab: "compromissos", ...(filter ? { loja: filter } : {}),
-    ...(nextKind ? { tipoCompromisso: nextKind } : {}), ...(nextDeadline ? { prazoCompromisso: nextDeadline } : {}),
+    ...commitmentFilterParams({ ...filters, ...changes }), ...(nextPage ? { compromissosPagina: String(nextPage) } : {}),
   });
   return <>
     <CreateDialog id="novo-compromisso" title="Novo compromisso" reopen={Boolean(createError)}>
@@ -263,35 +295,48 @@ export function Commitments({ state, filter, createError, kind, deadline }: {
         <div className="span-two"><Submit>Lançar compromisso</Submit></div>
       </form>
     </CreateDialog>
+    <div className="metrics-grid">{stats.map(([name, value]) => <Metric key={name} name={name} value={value} />)}</div>
+    <nav className="branch-filter" aria-label="Situação dos compromissos">
+      <Link href={href({ view: undefined })} aria-current={!paid ? "page" : undefined}>Em aberto</Link>
+      <Link href={href({ view: "pagos" })} aria-current={paid ? "page" : undefined}>Pagos e recebidos</Link>
+    </nav>
     <section className="panel">
-      <div className="panel-title"><h2>Compromissos em aberto</h2></div>
+      <div className="panel-title"><h2>{paid ? "Histórico de pagamentos e recebimentos" : "Compromissos em aberto"}</h2></div>
       <div className="panel-title">
         <nav className="stock-category-filter" aria-label="Tipo de compromisso">
-          <Link href={href(undefined, deadline)} aria-current={kind !== "fixos" ? "page" : undefined}>Todos os tipos</Link>
-          <Link href={href("fixos", deadline)} aria-current={kind === "fixos" ? "page" : undefined}>Fixos</Link>
+          {[[undefined, "Todos os tipos"], ["fixos", "Fixos"], ["mensais", "Mensais"], ["avulsos", "Avulsos"]].map(([key, label]) =>
+            <Link key={label} href={href({ kind: key })} aria-current={kind === key ? "page" : undefined}>{label}</Link>)}
         </nav>
-        <nav className="stock-category-filter" aria-label="Vencimento dos compromissos">
-          {[["", "Todos os prazos"], ["mes", "Este mês"], ["atrasados", "Atrasados"], ["a-vencer", "A vencer em até 5 dias"]].map(([key, label]) =>
-            <Link key={key} href={href(kind, key)} aria-current={(deadline ?? "") === key ? "page" : undefined}>{label}</Link>)}
-        </nav>
+        {!paid && <nav className="stock-category-filter" aria-label="Vencimento dos compromissos">
+          {[[undefined, "Todos os prazos"], ["mes", "Este mês"], ["atrasados", "Atrasados"], ["a-vencer", "A vencer em até 5 dias"]].map(([key, label]) =>
+            <Link key={label} href={href({ deadline: key })} aria-current={deadline === key ? "page" : undefined}>{label}</Link>)}
+        </nav>}
       </div>
+      {paid && <form action="/admin" method="get" className="admin-form report-filter" key={(paidFrom ?? "") + ":" + (paidTo ?? "")}>
+        <input type="hidden" name="tab" value="compromissos" /><input type="hidden" name="loja" value={filter} />
+        <CommitmentFilterInputs kind={kind} deadline={deadline} view={view} />
+        <label>Última baixa a partir de<input type="date" name="baixaInicio" defaultValue={paidFrom} /></label>
+        <label>Última baixa até<input type="date" name="baixaFim" defaultValue={paidTo} /></label>
+        <button className="button yellow" type="submit">Aplicar período</button>
+        {(paidFrom || paidTo) && <Link className="button" href={href({ paidFrom: undefined, paidTo: undefined })}>Limpar período</Link>}
+      </form>}
       {entries.length ? <div className="table-wrap"><table>
-        <thead><tr>{["Compromisso", "Unidade", "Vencimento", "Status", "Saldo", "Ações"].map((name) => <th scope="col" key={name}>{name}</th>)}</tr></thead>
-        <tbody>{entries.map((entry) => {
+        <thead><tr>{["Compromisso", "Unidade", paid ? "Última baixa" : "Vencimento", "Status", paid ? "Valor baixado" : "Saldo", "Ações"].map((name) => <th scope="col" key={name}>{name}</th>)}</tr></thead>
+        <tbody>{entries.slice(pageStart, pageStart + 15).map((entry) => {
           const template = entry.recurringFrom ? state.ledger.find((item) => item.id === entry.recurringFrom) : entry;
           const rule = template?.recurrence;
           return <tr key={entry.id}>
-            <td><strong>{entry.name}</strong><small>{labels[entry.kind]}{isFixedCommitment(entry) ? " · Fixo" : ""}</small></td>
-            <td>{storeName(entry.store, state)}</td><td>{shortDate(entry.due)}</td>
-            <td><span className="pill">{entry.due && entry.due < now ? "Atrasado" : entry.direction === "in" ? "A receber" : "A pagar"}</span></td>
-            <td>{money(balanceDue(entry))}</td>
+            <td><strong>{entry.name}</strong><small>{labels[entry.kind]}{" · " + ({ fixos: "Fixo", mensais: "Mensal", avulsos: "Avulso" })[entryKind(entry)]}</small></td>
+            <td>{storeName(entry.store, state)}</td><td>{shortDate(paid ? lastPayment(entry) : entry.due)}</td>
+            <td><span className="pill">{paid ? (entry.direction === "out" ? "Pago" : "Recebido") : entry.due && entry.due < now ? "Atrasado" : entry.direction === "in" ? "A receber" : "A pagar"}</span></td>
+            <td>{money(paid ? settledAmount(entry) : balanceDue(entry))}</td>
             <td><div className="workspace-section-links">
               <DetailsDialog id={"compromisso-" + entry.id} title={entry.name}>
                 <div className="sale-detail-content">
                   <section className="sale-detail-card"><h3>Dados do compromisso</h3>
                     <p>{storeName(entry.store, state)} · {labels[entry.kind]} · {money(entry.amount)}</p>
                     {rule && <p>{rule.endedOn ? "Recorrência encerrada em " + shortDate(rule.endedOn) : rule.months ? "Recorrência de " + rule.months + " mês(es)" : "Recorrência mensal até encerrar"}</p>}
-                    <LedgerForm entry={entry} filter={filter} mode="schedule" filters={filters} />
+                    {!paid && <LedgerForm entry={entry} filter={filter} mode="schedule" filters={filters} />}
                     {rule && !rule.endedOn && <details><summary>Encerrar recorrência</summary>
                       <p>Os compromissos já gerados continuam disponíveis.</p>
                       <LedgerForm entry={entry} filter={filter} mode="end-recurrence" filters={filters} />
@@ -305,18 +350,28 @@ export function Commitments({ state, filter, createError, kind, deadline }: {
                       </details>}
                   </div>)}
                   {entry.manual && entry.settlements.every((payment) => payment.reversedOn) &&
-                    <details className="sale-detail-card"><summary>Cancelar este lançamento</summary>
-                      <LedgerForm entry={entry} filter={filter} mode="cancel" filters={filters} />
-                    </details>}
+                    <DetailsDialog id={"cancelar-" + entry.id} title="Cancelar este lançamento?" trigger="Cancelar este lançamento" danger>
+                      <div className="sale-detail-content">
+                        <p>{entry.name} · {money(entry.amount)}. Confirme o cancelamento deste lançamento.</p>
+                        <LedgerForm entry={entry} filter={filter} mode="cancel" filters={filters} />
+                      </div>
+                    </DetailsDialog>}
                 </div>
               </DetailsDialog>
-              <DetailsDialog id={"baixa-" + entry.id} title="Registrar baixa" trigger="Registrar baixa">
+              {!paid && <DetailsDialog id={"baixa-" + entry.id} title="Registrar baixa" trigger="Registrar baixa">
                 <LedgerForm entry={entry} filter={filter} mode="pay" filters={filters} />
-              </DetailsDialog>
+              </DetailsDialog>}
             </div></td>
           </tr>;
         })}</tbody>
       </table></div> : <p className="admin-empty">Nenhum compromisso nesta seleção.</p>}
+      {pageCount > 1 && <nav className="panel-title" aria-label="Páginas dos compromissos">
+        <span>Página {page} de {pageCount} · {pageStart + 1}–{Math.min(pageStart + 15, entries.length)} de {entries.length}</span>
+        <div className="workspace-section-links">
+          {page > 1 && <Link href={href({}, page - 1)}>Anterior</Link>}
+          {page < pageCount && <Link href={href({}, page + 1)}>Próxima</Link>}
+        </div>
+      </nav>}
     </section>
     {recurring.length > 0 && <section className="panel">
       <div className="panel-title"><h2>Recorrências cadastradas</h2></div>
@@ -341,10 +396,11 @@ function LedgerForm({ entry, filter, mode, settlementId, filters }: { entry: Led
   return <form className="admin-form" action={updateLedger}>
     <HiddenFilter filter={filter} /><CommitmentFilterInputs {...filters} />
     <input type="hidden" name="id" value={entry.id} /><input type="hidden" name="mode" value={mode} />
+    {mode === "cancel" && <label className="checkbox span-two"><input type="checkbox" name="confirmed" required /> Confirmo o cancelamento</label>}
     {mode === "pay" && <><input type="hidden" name="paymentId" value={randomUUID()} /><Currency name="amount" label="Valor desta baixa (R$)" value={balanceDue(entry)} required /></>}
     {settlementId && <input type="hidden" name="settlementId" value={settlementId} />}
     {mode !== "cancel" && mode !== "end-recurrence" && <label>{mode === "schedule" ? "Novo vencimento" : mode === "reverse" ? "Data do estorno" : "Data da baixa"}
       <input name="date" type="date" defaultValue={mode === "schedule" ? entry.due : today()} required /></label>}
-    <div><Submit>{mode === "schedule" ? "Atualizar vencimento" : mode === "reverse" ? "Confirmar estorno" : mode === "cancel" ? "Confirmar cancelamento" : mode === "end-recurrence" ? "Confirmar encerramento" : "Registrar baixa"}</Submit></div>
+    <div><Submit variant={mode === "cancel" ? "danger" : "yellow"}>{mode === "schedule" ? "Atualizar vencimento" : mode === "reverse" ? "Confirmar estorno" : mode === "cancel" ? "Confirmar cancelamento" : mode === "end-recurrence" ? "Confirmar encerramento" : "Registrar baixa"}</Submit></div>
   </form>;
 }
