@@ -36,4 +36,12 @@ export function accessFor(account: AccountAccess, role = account.role ?? "admin"
 }
 
 export const canAccess = (account: AccountAccess, module: Module) => accessFor(account).includes(module);
+export function overviewAccess(account: AccountAccess) {
+  return {
+    sales: canAccess(account, "vendas"), finance: canAccess(account, "financeiro"),
+    inventory: canAccess(account, "estoque"), purchases: canAccess(account, "compras"),
+    crm: canAccess(account, "crm"), staff: canAccess(account, "funcionarios"), assets: canAccess(account, "bens"),
+  };
+}
+
 export const invoiceModule = { purchase: "compras", sale: "vendas", client: "crm", asset: "bens" } as const;

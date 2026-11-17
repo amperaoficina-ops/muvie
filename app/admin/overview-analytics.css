@@ -1,0 +1,11 @@
+.analytics-group { display: grid; gap: .75rem; min-width: 0; }
+.analytics-group > h2 { font-size: 1.1rem; font-weight: 800; }
+.analytics-chart h3 { font-size: .96rem; font-weight: 750; }
+.analytics-chart dl { display: grid; gap: .65rem; padding: 1rem; }
+.analytics-chart dl > div { display: grid; gap: .3rem; }
+.analytics-chart dt { color: #4c5565; font-size: .83rem; }
+.analytics-chart dd { display: grid; grid-template-columns: minmax(2rem, 1fr) auto; gap: .75rem; align-items: center; margin: 0; }
+.analytics-chart dd strong { font-size: .85rem; font-variant-numeric: tabular-nums; }
+.analytics-track { display: block; height: .5rem; background: #e8ecf2; border-radius: 1rem; overflow: hidden; }
+.analytics-track i { display: block; height: 100%; background: #bb8a00; border-radius: inherit; }
+.analytics-track i[data-negative="true"] { background: #b84b4b; }

@@ -294,11 +294,14 @@ export async function saveTradeInSale(form: FormData) {
 
 export async function returnConsignment(form: FormData) {
   const createdAt = new Date().toISOString();
-  await commit(form, "consignados", "Devolução consignada registrada.", (state) => {
-    const id = value(form, "movementId", 36);
-    if (!uuidPattern.test(id)) throw new RetailError("Atualize a página antes de registrar a devolução.");
-    returnConsignedLot(state, { id, createdAt, purchaseId: value(form, "purchaseId"),
-      productId: value(form, "productId"), store: choice(form, "store", storeIds(state)), quantity: units(form) });
+  await runAction(form, "consignados", "Devolução consignada registrada.", async (user) => {
+    if (!isDirector(user)) throw new RetailError("Somente a Diretoria pode estornar consignados.");
+    await editWithAudit(user, "Devolução consignada registrada.", (state) => {
+      const id = value(form, "movementId", 36);
+      if (!uuidPattern.test(id)) throw new RetailError("Atualize a página antes de registrar a devolução.");
+      returnConsignedLot(state, { id, createdAt, purchaseId: value(form, "purchaseId"),
+        productId: value(form, "productId"), store: choice(form, "store", storeIds(state)), quantity: units(form) });
+    });
   });
 }
 

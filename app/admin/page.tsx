@@ -17,7 +17,7 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
+  balanceDue, businessDate, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
 import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
@@ -29,11 +29,12 @@ import { StockFields } from "./stock-fields";
 import { InventoryOverview, InvoiceOverview } from "./inventory-overview";
 import { UnitDialog } from "./unit-dialog";
 import { Submit } from "./submit";
-import { CardSettings, Charts, TestimonialsSettings, UsersPanel } from "./operations";
+import { OverviewAnalytics } from "./overview-analytics";
+import { CardSettings, TestimonialsSettings, UsersPanel } from "./operations";
 import { RecordSearch } from "./record-search";
 import { Simulator } from "./simulator";
 import { Commitments, Finance, Rankings, reportPeriod, StoresPanel } from "./finance";
-import { isDirector, isPrimaryAdmin, canAccess } from "@/domain/access";
+import { isDirector, isPrimaryAdmin, canAccess, overviewAccess } from "@/domain/access";
 
 const nav = [
   { id: "visao", label: "Visão geral", icon: "grid", description: "Acompanhe o estoque, as vendas e os atendimentos das suas lojas." },
@@ -124,32 +125,32 @@ function InvoiceBox({ owner, id, filter, invoices }: { owner: InvoiceOwner; id: 
   </section>;
 }
 
-function Overview({ state, filter, showSales }: { state: RetailState; filter: Filter; showSales: boolean }) {
-  const sales = state.sales.filter((sale) => !sale.canceledAt && (!filter || sale.store === filter));
-  const contacts = state.contacts.filter((contact) => !filter || contact.store === filter);
+function Overview({ state, filter, showSales, showInventory, showCrm, period }: { state: RetailState; filter: Filter; showSales: boolean; showInventory: boolean; showCrm: boolean; period: { from: string; to: string } }) {
+  const sales = state.sales.filter((sale) => !sale.canceledAt && (!filter || sale.store === filter) &&
+    businessDate(new Date(sale.createdAt)) >= period.from && businessDate(new Date(sale.createdAt)) <= period.to);
+  const contacts = state.contacts.filter((contact) => (!filter || contact.store === filter) && contact.stage !== "Ganho" && contact.stage !== "Perdido");
   const stock = (store: StoreId) => state.products.reduce((total, product) => total + (product.stock[store] ?? 0), 0);
   const metrics = [
-    { label: "Vendas registradas", value: sales.length, detail: "Vendas ativas no histórico", icon: "bag" },
-    { label: "Valor em vendas", value: money(sales.reduce((sum, sale) => sum + sale.total, 0)), detail: "Total líquido de descontos", icon: "bolt" },
-    { label: "Unidades em estoque", value: filter ? stock(filter) : storeList(state).reduce((sum, unit) => sum + stock(unit.id), 0), detail: state.products.length + " produtos no catálogo interno", icon: "box" },
-    { label: "Atendimentos abertos", value: contacts.length, detail: "Contatos em acompanhamento", icon: "users" },
+    { label: "Vendas registradas", value: sales.length, detail: "Vendas ativas no período", icon: "bag", visible: showSales },
+    { label: "Valor em vendas", value: money(sales.reduce((sum, sale) => sum + sale.total, 0)), detail: "Total líquido de descontos", icon: "bolt", visible: showSales },
+    { label: "Unidades em estoque", value: filter ? stock(filter) : storeList(state).reduce((sum, unit) => sum + stock(unit.id), 0), detail: state.products.length + " produtos no catálogo interno", icon: "box", visible: showInventory },
+    { label: "Atendimentos abertos", value: contacts.length, detail: "Contatos em acompanhamento", icon: "users", visible: showCrm },
   ] as const;
   return <>
-    <div className="metrics-grid">{metrics.map((item) => <article key={item.label} className="metric panel"><span className="metric-icon"><Icon name={item.icon} size={19} /></span><p>{item.label}</p><strong>{item.value}</strong><small>{item.detail}</small></article>)}</div>
-    <Charts state={state} filter={filter} />
+    <div className="metrics-grid">{metrics.filter((item) => item.visible).map((item) => <article key={item.label} className="metric panel"><span className="metric-icon"><Icon name={item.icon} size={19} /></span><p>{item.label}</p><strong>{item.value}</strong><small>{item.detail}</small></article>)}</div>
     <div className="overview-grid">
       {showSales && <section className="panel"><div className="panel-title"><h2>Vendas recentes</h2><Link className="back-link" href={adminUrl("vendas", filter)}>Ver vendas →</Link></div>
         {sales.length ? <SalesTable state={state} sales={sales.slice(0, 5)} filter={filter} /> : <Empty>As vendas registradas nesta unidade aparecerão aqui.</Empty>}
       </section>}
       <section className="panel"><div className="panel-title"><h2>Suas unidades</h2><span className="pill">{storeList(state).length} LOJAS</span></div>
-        <div className="branch-list">{storeList(state).map((store) => <Link href={adminUrl("visao", store.id)} key={store.id}><span className="metric-icon"><Icon name="pin" size={18} /></span><span><strong>{store.name}</strong><small>{stock(store.id)} unidades em estoque</small></span><Icon name="arrow" size={17} /></Link>)}</div>
+        <div className="branch-list">{storeList(state).map((store) => <Link href={adminUrl("visao", store.id) + "&" + new URLSearchParams({ inicio: period.from, fim: period.to })} key={store.id}><span className="metric-icon"><Icon name="pin" size={18} /></span><span><strong>{store.name}</strong>{showInventory && <small>{stock(store.id)} unidades em estoque</small>}</span><Icon name="arrow" size={17} /></Link>)}</div>
       </section>
     </div>
   </>;
 }
 
-function Consignment({ state, filter, detailed = false, showPurchases = false }: {
-  state: RetailState; filter: Filter; detailed?: boolean; showPurchases?: boolean;
+function Consignment({ state, filter, detailed = false, showPurchases = false, canReturn = false }: {
+  state: RetailState; filter: Filter; detailed?: boolean; showPurchases?: boolean; canReturn?: boolean;
 }) {
   const { lots, cost } = stockComposition(state, filter);
   const scooters = stockComposition({ ...state, products: state.products.filter((item) => item.category === "Scooter elétrica") }, filter);
@@ -169,12 +170,12 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
       <p>Consignadas <strong>{format.format(percent(scooters.consigned))}%</strong> · Próprias ou sem lote <strong>{format.format(percent(scooters.owned))}%</strong></p>
 
     </div>
-    {detailed && (lots.length ? <Table headers={["Produto", "Cor", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse", "Ação"]}>
+    {detailed && (lots.length ? <Table headers={["Produto", "Cor", "Unidade", "Fornecedor", "Entrada", "Saldo", "Valor de repasse", ...(canReturn ? ["Ação"] : [])]}>
       {lots.map((lot) => <tr key={stockLotId(lot) + lot.store}>
         <td>{state.products.find((product) => product.id === lot.productId)?.name ?? lot.productId}</td>
         <td>{lot.color ?? "Sem cor definida"}</td><td>{storeName(lot.store, state)}</td><td>{lot.supplier}</td><td>{calendarLabel(lot.date)}</td>
         <td>{lot.quantity} un.</td><td>{money(lot.quantity * lot.unitCost)}</td>
-        <td><DetailsDialog id={"devolucao-" + stockLotId(lot) + "-" + lot.store} title="Estornar consignado" trigger="Estornar">
+        {canReturn && <td><DetailsDialog id={"devolucao-" + stockLotId(lot) + "-" + lot.store} title="Estornar consignado" trigger="Estornar">
           <form className="admin-form" action={returnConsignment}>
             <FilterInput filter={filter} />
             <input type="hidden" name="movementId" value={randomUUID()} />
@@ -186,7 +187,7 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
             <p className="form-note span-two">Saldo disponível neste lote: {lot.quantity} un. A devolução será registrada no histórico do estoque.</p>
             <div className="span-two"><Submit variant="danger">Confirmar devolução</Submit></div>
           </form>
-        </DetailsDialog></td>
+        </DetailsDialog></td>}
       </tr>)}
     </Table> : <Empty>Nenhum lote consignado com saldo nesta seleção.</Empty>)}
   </section>;
@@ -936,8 +937,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const denied = !!requested && !canAccess(user, requested.id);
   const active = (denied ? undefined : requested) ?? visibleNav[0];
   if (!active) return <main className="admin-content"><h1>Acesso ao painel</h1><p>Nenhum módulo está liberado para esta conta.</p><SignOutDialog /></main>;
-  const showSales = canAccess(user, "vendas");
-  const showPurchases = canAccess(user, "compras");
+  const analyticsAccess = overviewAccess(user);
+  const { sales: showSales, purchases: showPurchases } = analyticsAccess;
   const period = reportPeriod(params.inicio, params.fim);
   const commitmentKind = ["fixos", "mensais", "avulsos"].find((item) => item === params.tipoCompromisso);
   const commitmentDeadline = ["mes", "atrasados", "a-vencer"].find((item) => item === params.prazoCompromisso);
@@ -1037,13 +1038,14 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
                 return <Link href={adminUrl(id, filter) + target} key={id}><strong>{label}</strong><small>{description}</small><Icon name="arrow" size={16} /></Link>;
               })}</div>
             </section>}
-            <Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} />{canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }<Overview state={state} filter={filter} showSales={showSales} />
-            {(canAccess(user, "estoque") || canAccess(user, "consignados")) && <InventoryOverview state={state} filter={filter} showCost={canAccess(user, "financeiro") || showPurchases} />}
+            <Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} showSales={showSales} />{canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }<Overview state={state} filter={filter} period={period} showSales={showSales} showInventory={analyticsAccess.inventory} showCrm={analyticsAccess.crm} />
+            <OverviewAnalytics state={state} store={filter || undefined} from={period.from} to={period.to} access={analyticsAccess} />
+            {analyticsAccess.inventory && <InventoryOverview state={state} filter={filter} showCost={canAccess(user, "financeiro") || showPurchases} />}
             {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}
           </>}
           {active.id === "produtos" && <Products category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings requestedPage={params.catalogoPagina} state={state} showProducts={canAccess(user, "produtos")} />}
-          {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
+          {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} canReturn={isDirector(user)} />}
           {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
           {active.id === "compras" && <Purchases canCancel={user.role === "admin" || isPrimaryAdmin(user)} canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} success={params.ok} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}

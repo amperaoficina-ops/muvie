@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CreateDialog, DetailsDialog } from "./sale-dialog";
 import { SearchSelect } from "./search-select";
-import { money, storeList, cardMachineOptions, legacyCardMachine, rateMachineId, type CardMachine, type CardRate, type RetailState, type StoreId } from "@/domain/retail";
+import { cardMachineOptions, legacyCardMachine, rateMachineId, type CardMachine, type CardRate, type RetailState } from "@/domain/retail";
 import { manageCardMachine, saveCardMachine, saveRate, saveTestimonial, saveUser } from "./actions";
 import { Submit } from "./submit";
 import { isPrimaryAdmin, roles, type AccountAccess } from "@/domain/access";
@@ -130,37 +130,4 @@ export function UsersPanel({ users, actor }: { users: TeamAccount[]; actor: Team
       </form>
     </section>
   </div>;
-}
-
-export function Charts({ state, filter }: { state: RetailState; filter: StoreId | "" }) {
-  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" });
-  const end = Date.parse(today.format(new Date()) + "T00:00:00Z");
-  const sales = state.sales.filter((sale) => !sale.canceledAt && (!filter || sale.store === filter));
-  const weeks = Array.from({ length: 4 }, (_, index) => {
-    const start = end - (27 - index * 7) * 86400000;
-    const label = new Date(start).toISOString().slice(5, 10).split("-").reverse().join("/");
-    const total = sales.filter((sale) => {
-      const day = Date.parse(today.format(new Date(sale.createdAt)) + "T00:00:00Z");
-      return day >= start && day < start + 7 * 86400000;
-    }).reduce((sum, sale) => sum + sale.total, 0);
-    return { label, total };
-  });
-  const stock = storeList(state).filter((item) => !filter || item.id === filter).map((item) => ({
-    label: item.name, total: state.products.reduce((sum, product) => sum + (product.stock[item.id] ?? 0), 0),
-  }));
-  return <div className="overview-grid">
-    <BarChart title="Vendas nos últimos 28 dias" subtitle="Valores agrupados por semana · líquidos de descontos" rows={weeks} format={money} />
-    <BarChart title="Estoque por loja" subtitle="Unidades disponíveis agora" rows={stock} format={(value) => value + " un."} />
-  </div>;
-}
-
-function BarChart({ title, subtitle, rows, format }: { title: string; subtitle: string; rows: { label: string; total: number }[]; format: (value: number) => string }) {
-  const max = Math.max(1, ...rows.map((row) => row.total));
-  return <section className="panel"><div className="panel-title"><h2>{title}</h2></div>
-    <div className="bar-chart"><p className="form-note">{subtitle}</p>
-      {rows.map((row) => <div className="bar-row" key={row.label}>
-        <span>{row.label}</span><div className="bar-track" aria-hidden="true"><i style={{ width: (row.total / max * 100) + "%" }} /></div><strong>{format(row.total)}</strong>
-      </div>)}
-    </div>
-  </section>;
 }

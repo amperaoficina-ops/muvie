@@ -329,6 +329,62 @@ export function recordProfitDistribution(state: RetailState, input: {
   });
 }
 
+export function overviewAnalytics(state: RetailState, from: string, to: string, store?: StoreId) {
+  const selected = (id: StoreId) => !store || id === store;
+  const inPeriod = (date: string) => date >= from && date <= to;
+  const sales = state.sales.filter((sale) => selected(sale.store) && !sale.canceledAt && inPeriod(businessDate(new Date(sale.createdAt))));
+  const purchases = state.purchases.filter((purchase) => selected(purchase.store) && !purchase.canceledAt && inPeriod(purchase.date));
+  const contacts = state.contacts.filter((contact) => selected(contact.store));
+  const units = storeList(state).filter((unit) => selected(unit.id));
+  const lots = state.stockLots.filter((lot) => selected(lot.store) && lot.quantity > 0);
+  const movements = state.movements.filter((movement) => selected(movement.store) && inPeriod(businessDate(new Date(movement.createdAt))));
+  const total = sales.reduce((sum, sale) => sum + sale.total, 0);
+  const ledger = state.ledger.filter((entry) => selected(entry.store) && !entry.canceled);
+  const purchasesByStatus = { Quitadas: 0, "A pagar": 0, Consignadas: 0, "Sem classificação": 0 };
+  const ledgerById = new Map(ledger.map((entry) => [entry.id, entry]));
+  for (const purchase of purchases) {
+    const payable = ledgerById.get(purchase.id + "-payable");
+    const status = purchase.acquisition === "consignada" ? "Consignadas" :
+      payable && balanceDue(payable) > 0 ? "A pagar" :
+      payable || purchase.acquisition === "quitada" ? "Quitadas" : "Sem classificação";
+    purchasesByStatus[status] += purchase.total;
+  }
+  const stockByCategory = new Map<string, number>();
+  for (const product of state.products) {
+    const quantity = units.reduce((sum, unit) => sum + (product.stock[unit.id] ?? 0), 0);
+    stockByCategory.set(product.category, (stockByCategory.get(product.category) ?? 0) + quantity);
+  }
+  const day = 86400000;
+  const start = Date.parse(from + "T00:00:00Z");
+  const end = Date.parse(to + "T00:00:00Z");
+  const step = Math.max(1, Math.ceil(((end - start) / day + 1) / 10)) * day;
+  const buckets: { start: string; end: string; revenue: number; sales: number }[] = [];
+  for (let date = start; date <= end; date += step) {
+    buckets.push({ start: new Date(date).toISOString().slice(0, 10),
+      end: new Date(Math.min(end, date + step - day)).toISOString().slice(0, 10), revenue: 0, sales: 0 });
+  }
+  for (const sale of sales) {
+    const date = businessDate(new Date(sale.createdAt));
+    const index = Math.floor((Date.parse(date + "T00:00:00Z") - start) / step);
+    const bucket = buckets[index];
+    if (bucket) { bucket.revenue += sale.total; bucket.sales++; }
+  }
+  return {
+    sales, total, average: sales.length ? Math.round(total / sales.length) : 0, buckets,
+    purchases, purchasesByStatus, stockByCategory: [...stockByCategory], contacts,
+    salesByMethod: paymentMethods.map((method) => [method, sales.reduce((sum, sale) => sum +
+      (sale.payments ?? [{ method: sale.method, amount: sale.total }]).reduce((amount, payment) => amount + (payment.method === method ? payment.amount : 0), 0), 0)] as const),
+    salesByStore: units.map((unit) => [unit.name, sales.reduce((sum, sale) => sum + (sale.store === unit.id ? sale.total : 0), 0)] as const),
+    stockByColor: productColors.map((color) => [color, lots.reduce((sum, lot) => sum + (lot.color === color ? lot.quantity : 0), 0)] as const),
+    movementTotals: { Entradas: movements.reduce((sum, item) => sum + Math.max(0, item.quantity), 0),
+      Saídas: movements.reduce((sum, item) => sum + Math.max(0, -item.quantity), 0) },
+    advances: (state.staffAdvances ?? []).filter((item) => selected(item.store) && inPeriod(item.date)),
+    activeStaff: state.staff.filter((item) => selected(item.store) && item.active).length,
+    assets: state.assets.filter((item) => selected(item.store)),
+    tradeIns: tradeInAssets(state, store),
+  };
+}
+
 export function salesRanking(state: RetailState, from: string, to: string, store?: StoreId, sellers = false) {
   const groups = new Map<string, { label: string; units: number; amount: number }>();
   for (const sale of state.sales) {

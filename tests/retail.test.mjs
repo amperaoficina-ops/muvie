@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, productColorAvailability, sellTradeInAsset, recordPurchase, recordProfitDistribution, recordSale, returnConsignedLot, stockComposition, stockLotId, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, overviewAnalytics, productColorAvailability, sellTradeInAsset, recordPurchase, recordProfitDistribution, recordSale, returnConsignedLot, stockComposition, stockLotId, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -366,4 +366,40 @@ test("uma compra multicolorida mantém o financeiro único e baixa a variante se
   cancelPurchase(state, "cores", date);
   assert.equal(state.products[0].stock.palhoca, 1);
   assert.equal(state.movements.filter((row) => row.id.startsWith("cores-cancel")).length, 1);
+});
+
+test("Visão geral filtra unidade e datas, ignora cancelamentos e preserva pagamentos mistos", () => {
+  const state = fixture();
+  linkOldStock(state, "carbono", "scooter", "palhoca", 300000);
+  recordCheckout(state, { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "carbono" }],
+    payments: [{ method: "Pix", amount: 389900, received: true, due: "" },
+      { method: "Produto", amount: 200000, received: true, due: "" }] });
+  state.sales.push({ ...state.sales[0], id: "cancelada", canceledAt: date },
+    { ...state.sales[0], id: "fora-periodo", createdAt: "2026-10-01T14:00:00Z" });
+  const summary = overviewAnalytics(state, "2026-11-01", "2026-11-30", "palhoca");
+  assert.equal(summary.sales.length, 1);
+  assert.equal(summary.total, 589900);
+  assert.equal(summary.average, 589900);
+  assert.equal(summary.buckets.reduce((sum, bucket) => sum + bucket.revenue, 0), summary.total);
+  assert.equal(summary.buckets.at(-1).end, "2026-11-30");
+  assert.equal(summary.buckets.length, 10);
+  assert.equal(Object.fromEntries(summary.salesByMethod).Pix, 389900);
+  assert.equal(Object.fromEntries(summary.salesByMethod).Produto, 200000);
+  assert.equal(overviewAnalytics(state, "2026-11-01", "2026-11-30", "sao-jose").total, 0);
+});
+
+test("Visão geral ignora compras canceladas e mantém posição de estoque independente do período", () => {
+  const state = fixture();
+  const compra = { id: "compra", productId: "scooter", store: "palhoca", supplier: "Fornecedor",
+    date: "2026-11-07", createdAt: date, quantity: 2, unitCost: 10000, acquisition: "consignada", color: "Carbono" };
+  recordPurchase(state, compra);
+  recordPurchase(state, { ...compra, id: "cancelada" });
+  cancelPurchase(state, "cancelada", date);
+  const current = overviewAnalytics(state, "2026-11-01", "2026-11-30", "palhoca");
+  const past = overviewAnalytics(state, "2026-10-01", "2026-10-31", "palhoca");
+  assert.equal(current.purchases.length, 1);
+  assert.equal(current.purchasesByStatus.Consignadas, 20000);
+  assert.equal(past.purchases.length, 0);
+  assert.equal(Object.fromEntries(past.stockByColor).Carbono, 2);
+  assert.deepEqual(past.stockByCategory, current.stockByCategory);
 });

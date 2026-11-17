@@ -3,7 +3,7 @@ import { money, stockComposition, storeList, type RetailState } from "@/domain/r
 import type { InvoiceMeta } from "@/lib/invoices";
 
 export function InventoryOverview({ state, filter, showCost }: { state: RetailState; filter: string; showCost: boolean }) {
-  const purchases = state.purchases.filter((item) => !filter || item.store === filter);
+  const purchases = state.purchases.filter((item) => !item.canceledAt && (!filter || item.store === filter));
   const units = storeList(state).filter((unit) => !filter || unit.id === filter);
   const rows = units.map((unit) => {
     const mix = stockComposition(state, unit.id);
@@ -44,7 +44,7 @@ export function InvoiceOverview({ state, invoices, filter, sales, purchases }: {
   const docs = [
     ...(sales ? state.sales.filter((sale) => !sale.canceledAt && (!filter || sale.store === filter))
       .map((sale) => ({ id: sale.id, name: sale.productName, tab: "vendas", status: attached.has("sale:" + sale.id) ? "Anexada" : sale.fiscalNotes !== undefined ? "Ficha preparada" : "Pendente" })) : []),
-    ...(purchases ? state.purchases.filter((purchase) => !filter || purchase.store === filter)
+    ...(purchases ? state.purchases.filter((purchase) => !purchase.canceledAt && (!filter || purchase.store === filter))
       .map((purchase) => ({ id: purchase.id, name: purchase.productName, tab: "compras", status: attached.has("purchase:" + purchase.id) ? "Anexada" : "Pendente" })) : []),
   ];
   const open = docs.filter((doc) => doc.status !== "Anexada");

@@ -41,12 +41,12 @@ function PeriodFilter({ period, filter, tab }: { period: Period; filter: Filter;
   ];
   const active = presets.find((preset) => preset.from === period.from && end === period.to);
   return <section className="panel" aria-label="Filtrar por período">
-    {tab === "financeiro" && <div className="panel-title">
+    <div className="panel-title">
       <nav className="stock-category-filter" aria-label="Períodos rápidos">
         {presets.map((preset) => <Link key={preset.label} aria-current={active === preset ? "page" : undefined}
           href={"/admin?" + new URLSearchParams({ tab, loja: filter, inicio: preset.from, fim: end })}>{preset.label}</Link>)}
       </nav>
-    </div>}
+    </div>
     <form className="admin-form report-filter" method="get" action="/admin" key={period.from + period.to}>
       <input type="hidden" name="tab" value={tab} />
       <input type="hidden" name="loja" value={filter} />
@@ -68,16 +68,16 @@ function RankChart({ title, rows }: { title: string; rows: ReturnType<typeof sal
   </section>;
 }
 
-export function Rankings({ state, filter, period, admin }: { state: RetailState; filter: Filter; period: Period; admin: boolean }) {
+export function Rankings({ state, filter, period, admin, showSales }: { state: RetailState; filter: Filter; period: Period; admin: boolean; showSales: boolean }) {
   const selected = filter || undefined;
   const report = admin ? financialReport(state, period.from, period.to, selected) : null;
   return <>
     <PeriodFilter period={period} filter={filter} tab="visao" />
-    <div className="overview-grid">
+    {showSales && <div className="overview-grid">
       <RankChart title="Modelos mais vendidos" rows={salesRanking(state, period.from, period.to, selected)} />
       <RankChart title="Vendas por vendedor" rows={salesRanking(state, period.from, period.to, selected, true)} />
-    </div>
-    {report && <section className="panel">
+    </div>}
+    {report && showSales && <section className="panel">
       <div className="panel-title"><h2>Margem por modelo</h2></div>
       <dl className="finance-rows">{modelMarginRanking(state, period.from, period.to, selected).slice(0, 8).map((row) =>
         <div key={row.label}><dt>{row.label}</dt><dd>{money(row.margin)}</dd></div>)}</dl>

@@ -10,7 +10,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const products = (await readRetail()).products;
   const matches = products.filter((product) => product.imageUrl === "/fotos/" + id);
   const user = matches.length && !matches.some((item) => item.published) ? await getCurrentUser() : null;
-  if (!matches.length || (!matches.some((item) => item.published) && (!user || !canAccess(user, "produtos")))) {
+  if (!matches.length || (!matches.some((item) => item.published) && (!user || !canAccess(user, "produtos") && !canAccess(user, "catalogo")))) {
     return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
   const db = await getMongoDb();
