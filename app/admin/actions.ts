@@ -12,6 +12,7 @@ import {
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
 import { accessFor, canAccess, isDirector, isPrimaryAdmin, moduleKeys, roles, invoiceModule, type Module, type Role } from "@/domain/access";
+import { saveCashStatement } from "@/lib/cash-statements";
 import { getMongoDb } from "@/lib/mongodb";
 import { hashPassword } from "@/lib/security";
 import { storeProductPhoto } from "@/lib/product-photos";
@@ -69,6 +70,10 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
   if (tab === "caixa") {
     const account = form.get("conta");
     if (typeof account === "string" && (uuidPattern.test(account) || account === "sem-conta")) params.set("conta", account);
+    const direction = form.get("caixaTipo");
+    if (direction === "entradas" || direction === "saidas") params.set("caixaTipo", direction);
+    const page = form.get("caixaPagina");
+    if (typeof page === "string" && /^\d{1,8}$/.test(page)) params.set("caixaPagina", page);
   }
   if (tab === "catalogo") {
     const page = form.get("catalogoPagina");
@@ -793,16 +798,28 @@ export async function assignCashMovement(form: FormData) {
 
 export async function reconcileCashAccount(form: FormData) {
   const id = randomUUID();
-  await runAction(form, "caixa", "Conferência de extrato registrada.", (user) => editWithAudit(user, "Confere extrato de Caixa", (state) => {
+  await runAction(form, "caixa", "Conferência de extrato registrada.", async (user) => {
     const accountId = value(form, "accountId", 36);
-    const account = state.cashAccounts?.find((row) => row.id === accountId);
     const date = requiredDate(form, "date");
-    if (!account || date < account.openingDate) throw new RetailError("Selecione uma conta aberta na data da conferência.");
     const statementBalance = signedCashAmount(form, "statementBalance");
-    const systemBalance = cashBalance(account, cashMovements(state), date);
-    (state.cashReconciliations ??= []).unshift({ id, accountId, date, statementBalance, systemBalance,
-      notes: value(form, "notes", 500, false), actor: user.email });
-  }));
+    const notes = value(form, "notes", 500, false);
+    const file = form.get("statement");
+    const findAccount = (state: RetailState) => {
+      const account = state.cashAccounts?.find((row) => row.id === accountId);
+      if (!account || date < account.openingDate) throw new RetailError("Selecione uma conta aberta na data da conferência.");
+      return account;
+    };
+    let statementName: string | undefined;
+    if (file instanceof File && (file.size || file.name)) {
+      findAccount(await readRetail());
+      statementName = await saveCashStatement(id, file);
+    }
+    await editWithAudit(user, "Confere extrato de Caixa", (state) => {
+      const systemBalance = cashBalance(findAccount(state), cashMovements(state), date);
+      (state.cashReconciliations ??= []).unshift({ id, accountId, date, statementBalance, systemBalance,
+        notes, actor: user.email, ...(statementName && { statementName }) });
+    });
+  });
 }
 
 export async function recordCashAdjustment(form: FormData) {

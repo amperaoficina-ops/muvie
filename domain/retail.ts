@@ -929,7 +929,7 @@ export type CashAccount = {
 export type CashAssignment = { entryId: string; settlementId: string; accountId: string };
 export type CashReconciliation = {
   id: string; accountId: string; date: string; statementBalance: number; systemBalance: number;
-  notes: string; actor: string;
+  notes: string; actor: string; statementName?: string;
 };
 
 export function cashMovements(state: RetailState) {

@@ -1,0 +1,21 @@
+.assignment {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 15rem;
+}
+
+.assignment select {
+  flex: 1;
+  min-width: 0;
+}
+
+.assignment button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.filters {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  align-items: end;
+}

@@ -981,7 +981,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; catalogoPagina?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string; conta?: string; caixaPagina?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; catalogoPagina?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string; conta?: string; caixaPagina?: string; caixaTipo?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -1004,7 +1004,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     ...(paidFrom ? { baixaInicio: paidFrom } : {}),
     ...(paidTo ? { baixaFim: paidTo } : {}),
   }) : "";
-  const periodQuery = active.id === "financeiro" || active.id === "visao" || active.id === "caixa" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to }) : "";
+  const cashDirection = params.caixaTipo === "entradas" || params.caixaTipo === "saidas" ? params.caixaTipo : undefined;
+  const periodQuery = active.id === "financeiro" || active.id === "visao" || active.id === "caixa" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to, ...(active.id === "caixa" && cashDirection ? { caixaTipo: cashDirection } : {}) }) : "";
   const showInvoices = ["compras", "vendas", "crm", "bens"].includes(active.id) || (active.id === "visao" && (showSales || showPurchases));
   const [state, invoices, users] = await Promise.all([
     denied ? null : readRetail().catch(() => null),
@@ -1109,7 +1110,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} invoices={invoices ?? []} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
-          {active.id === "caixa" && <Cash state={state} filter={filter} period={period} selected={params.conta} page={params.caixaPagina} />}
+          {active.id === "caixa" && <Cash state={state} filter={filter} period={period} selected={params.conta} page={params.caixaPagina} direction={cashDirection} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "compromissos" && <Commitments view={commitmentView} paidFrom={paidFrom} paidTo={paidTo} requestedPage={params.compromissosPagina} kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
