@@ -40,7 +40,10 @@ export type Contact = {
   address?: { postalCode: string; street: string; number: string; complement: string; neighborhood: string; city: string; state: string };
   createdAt: string;
 };
+export type Supplier = { id: string; name: string; phone?: string; email?: string; notes?: string };
+
 export type Purchase = {
+  supplierId?: string;
   id: string; store: StoreId; productId: string; productName: string; sku: string;
   supplier: string; contactId: string; quantity: number; unitCost: number; total: number;
   date: string; invoiceNumber: string; notes: string; createdAt: string;
@@ -63,6 +66,7 @@ export type Movement = {
   reason: string; createdAt: string; reference?: string;
 };
 export type RetailState = {
+  suppliers: Supplier[];
   units?: Store[];
   taxRates?: TaxRate[];
   staffAdvances?: StaffAdvance[];
@@ -71,7 +75,7 @@ export type RetailState = {
   staff: Staff[]; fixedCosts: FixedCost[]; assets: Asset[]; ledger: LedgerEntry[]; stockLots: StockLot[];
 };
 export const emptyRetailState = (): RetailState => ({
-  products: [], contacts: [], sales: [], movements: [], purchases: [], cardRates: [], audit: [], testimonials: [],
+  suppliers: [], products: [], contacts: [], sales: [], movements: [], purchases: [], cardRates: [], audit: [], testimonials: [],
   staff: [], fixedCosts: [], assets: [], ledger: [], stockLots: [],
 });
 export const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
@@ -345,6 +349,24 @@ export function transferStock(
 
 type SaleInput = Pick<Sale, "id" | "productId" | "store" | "customer" | "contactId" | "quantity" | "discount" | "method" | "createdAt" | "sellerId" | "origin">
   & { receive?: { mode: "received" | "pending"; due: string } };
+
+export function saveSupplierRecord(state: RetailState, supplier: Supplier, editing = false) {
+  const normalizeName = (name: string) => name.trim().replace(/\s+/g, " ").normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "").toLocaleLowerCase("pt-BR");
+  const name = supplier.name.trim().replace(/\s+/g, " ");
+  if (!name) throw new RetailError("Informe o nome do fornecedor.");
+  const existing = state.suppliers.find((item) => item.id !== supplier.id && normalizeName(item.name) === normalizeName(name));
+  if (existing) {
+    if (editing) throw new RetailError("Já existe um fornecedor com este nome.");
+    return existing;
+  }
+  const current = state.suppliers.find((item) => item.id === supplier.id);
+  if (editing && !current) throw new RetailError("Fornecedor não encontrado.");
+  const record = { ...supplier, name };
+  if (current) Object.assign(current, record);
+  else state.suppliers.push(record);
+  return record;
+}
 
 type PurchaseInput = Omit<Purchase, "productName" | "sku" | "total"> & { due?: string };
 

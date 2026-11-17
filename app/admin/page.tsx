@@ -1,3 +1,4 @@
+import { SupplierField } from "./supplier-field";
 import { SearchSelect } from "./search-select";
 import { TaxSettings } from "./tax-settings";
 import { CheckoutFields } from "./checkout-fields";
@@ -15,9 +16,9 @@ import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoice
 import { readRetail } from "@/lib/retail-store";
 import {
   balanceDue, money, saleNetProfit, productCategories, stages, stockComposition, storeName, storeList,
-  type Contact, type Product, type RetailState, type Sale, type Store, type StoreId,
+  type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment } from "./actions";
+import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts, returnConsignment, saveSupplier } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -38,6 +39,7 @@ const nav = [
   { id: "estoque", label: "Estoque", icon: "box", description: "Consulte saldos, registre movimentações e transfira produtos entre unidades." },
   { id: "compras", label: "Compras", icon: "bag", description: "Registre compras, dê entrada na unidade correta e organize as notas de fornecedores." },
   { id: "vendas", label: "Vendas", icon: "bag", description: "Registre vendas por unidade e acompanhe o histórico de cada operação." },
+  { id: "fornecedores", label: "Fornecedores", icon: "users", description: "Cadastre os fornecedores usados nas compras." },
   { id: "funcionarios", label: "Funcionários", icon: "users", description: "Acompanhe equipe, remuneração, vendas do mês e vales por unidade." },
   { id: "financeiro", label: "Financeiro", icon: "grid", description: "Acompanhe DRE, caixa, contas a pagar e a receber por unidade.", admin: true },
   { id: "lojas", label: "Todas as lojas", icon: "pin", description: "Cadastre unidades e configure equipe, custos fixos e estrutura.", admin: true },
@@ -54,11 +56,12 @@ const nav = [
 type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
-  { title: "Gestão", tabs: ["funcionarios", "financeiro", "taxas", "impostos", "usuarios", "logs"] },
+  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "financeiro", "taxas", "impostos", "usuarios", "logs"] },
   { title: "Lojas", tabs: ["lojas"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
 const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
+  fornecedores: { label: "Novo fornecedor", target: "novo-fornecedor" },
   estoque: { label: "Movimentar estoque", target: "movimentar-estoque" },
   produtos: { label: "Novo produto", target: "novo-produto" },
   compras: { label: "Registrar compra", target: "registrar-compra" },
@@ -328,7 +331,7 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
         <input type="hidden" name="focus" value={purchaseId} />
         <PurchaseProductFields canCreate={canCreateProduct} initialId={product?.id} products={state.products.map(({ id, name, sku, category, specs }) => ({ id, name, sku, category, specs }))} />
         <StoreField units={storeList(state)} filter={filter} label="Unidade que recebe o estoque" />
-        <label>Fornecedor<input name="supplier" maxLength={100} placeholder="Nome ou razão social" /></label>
+        <SupplierField suppliers={state.suppliers.map(({ id, name }) => ({ id, name }))} />
         <label>Cliente vinculado (opcional)<SearchSelect name="contactId"><option value="">Sem vínculo</option>{state.contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store, state)}</option>)}</SearchSelect></label>
         <label>Quantidade<input name="quantity" type="number" min="1" max="999999" defaultValue="1" required /></label>
 
@@ -344,6 +347,38 @@ function Purchases({ state, filter, invoices, focus, productId, query, category,
         <div className="span-two"><Submit>Registrar compra</Submit></div>
       </form> : <Empty><Link href={adminUrl("produtos", filter)}>Cadastre um produto para registrar compras →</Link></Empty>}
     </CreateDialog>
+  </>;
+}
+
+function SupplierForm({ supplier }: { supplier?: Supplier }) {
+  return <form className="admin-form" action={saveSupplier}>
+    {supplier && <><input type="hidden" name="id" value={supplier.id} /><input type="hidden" name="focus" value={supplier.id} /></>}
+    <label className="span-two">Nome ou razão social<input name="name" defaultValue={supplier?.name} required maxLength={100} /></label>
+    <label>Telefone<input name="phone" type="tel" defaultValue={supplier?.phone} maxLength={32} /></label>
+    <label>E-mail<input name="email" type="email" defaultValue={supplier?.email} maxLength={254} /></label>
+    <label className="span-two">Observações<textarea name="notes" defaultValue={supplier?.notes} maxLength={500} rows={3} /></label>
+    <div className="span-two"><Submit>Salvar fornecedor</Submit></div>
+  </form>;
+}
+
+function Suppliers({ suppliers, focus, error, success }: { suppliers: Supplier[]; focus?: string; error?: string; success?: string }) {
+  return <>
+    <CreateDialog id="novo-fornecedor" title="Novo fornecedor" reopen={Boolean(error && !focus)}>
+      {error && !focus && <p className="feedback error" role="alert">{error}</p>}
+      <SupplierForm />
+    </CreateDialog>
+    <section className="panel">
+      <div className="panel-title"><h2>Fornecedores cadastrados</h2><span className="pill">{suppliers.length}</span></div>
+      {suppliers.length ? <Table headers={["Fornecedor", "Telefone", "E-mail", "Ação"]}>
+        {suppliers.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR")).map((supplier) => <tr key={supplier.id}>
+          <td><strong>{supplier.name}</strong></td><td>{supplier.phone || "—"}</td><td>{supplier.email || "—"}</td>
+          <td><DetailsDialog id={"fornecedor-" + supplier.id} title={supplier.name} reopen={focus === supplier.id}>
+            {focus === supplier.id && (error || success) && <p className={"feedback " + (error ? "error" : "success")} role={error ? "alert" : "status"}>{error || success}</p>}
+            <SupplierForm supplier={supplier} />
+          </DetailsDialog></td>
+        </tr>)}
+      </Table> : <Empty>Nenhum fornecedor cadastrado.</Empty>}
+    </section>
   </>;
 }
 
@@ -776,7 +811,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
           </div>}
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
-          {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <div className={"admin-filter-bar" + (actionBesideUnits ? " crm-filter-bar" : "")}>
+          {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador", "fornecedores"].includes(active.id) && <div className={"admin-filter-bar" + (actionBesideUnits ? " crm-filter-bar" : "")}>
             {actionBesideUnits && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
             <div className="unit-filter"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery}>Todas</Link>
@@ -809,6 +844,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
+          {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}

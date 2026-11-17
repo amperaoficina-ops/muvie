@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   acquisitionTypes, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, updateSaleCosts, updatePurchaseCost,
-  postMonthlyCosts, returnConsignedLot, reverseSettlement, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
+  postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 import { requireUser, type User } from "@/lib/auth";
@@ -274,6 +274,16 @@ export async function saveSale(form: FormData) {
   }));
 }
 
+export async function saveSupplier(form: FormData) {
+  const newId = randomUUID();
+  await commit(form, "fornecedores", "Fornecedor salvo.", (state) => {
+    const id = value(form, "id", 36, false);
+    saveSupplierRecord(state, { id: id || newId, name: value(form, "name", 100),
+      phone: value(form, "phone", 32, false), email: value(form, "email", 254, false),
+      notes: value(form, "notes", 500, false) }, Boolean(id));
+  });
+}
+
 export async function savePurchase(form: FormData) {
   const createdAt = new Date().toISOString();
   await runAction(form, "compras", "Compra registrada e estoque atualizado.", async (user) => {
@@ -297,11 +307,16 @@ export async function savePurchase(form: FormData) {
           description: "", imageUrl: "", published: false, stock: {},
         });
       }
+      const supplierChoice = value(form, "supplierId", 36, false);
+      const supplier = supplierChoice === "new"
+        ? saveSupplierRecord(state, { id: randomUUID(), name: value(form, "supplierName", 100) })
+        : state.suppliers.find((item) => item.id === supplierChoice);
+      if (supplierChoice && !supplier) throw new RetailError("Selecione um fornecedor cadastrado.");
       const product = state.products.find((item) => item.id === productId);
       recordPurchase(state, {
         id, date, createdAt, openingBalance: form.get("openingBalance") === "on", store: choice(form, "store", storeIds(state)), productId,
         ...(product?.category === scooterCategory && { specs: readScooterSpecs(form) }),
-        supplier: value(form, "supplier", 100, false), contactId: value(form, "contactId", 36, false),
+        supplier: supplier?.name ?? "", supplierId: supplier?.id, contactId: value(form, "contactId", 36, false),
         quantity: units(form), unitCost: amount(form, "unitCost"),
         invoiceNumber: value(form, "invoiceNumber", 44, false), notes: value(form, "notes", 500, false),
         acquisition: form.has("acquisition") ? choice(form, "acquisition", acquisitionTypes) : undefined,
