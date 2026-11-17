@@ -45,6 +45,7 @@ export type Purchase = {
   supplier: string; contactId: string; quantity: number; unitCost: number; total: number;
   date: string; invoiceNumber: string; notes: string; createdAt: string;
   acquisition?: Acquisition;
+  openingBalance?: boolean;
   specs?: ScooterSpecs;
 };
 export type SaleLine = { productId: string; productName: string; sku: string; quantity: number; unitPrice: number; total: number; cost: number; missingCostUnits: number; gift: boolean };
@@ -341,15 +342,23 @@ export function recordPurchase(state: RetailState, input: PurchaseInput) {
   if (input.contactId && !contact) throw new RetailError("Cliente não encontrado.");
   const supplier = input.supplier || contact?.name;
   if (!supplier) throw new RetailError("Informe o fornecedor ou selecione um cliente vinculado.");
+  if (input.openingBalance && input.acquisition === "a-pagar") {
+    throw new RetailError("Para vincular saldo anterior, selecione compra quitada ou consignada.");
+  }
   if (input.acquisition === "a-pagar" && (!input.due || !isCalendarDate(input.due) || input.due < input.date)) {
     throw new RetailError("Informe um vencimento igual ou posterior à compra.");
   }
-  changeStock(state, product.id, input.store, input.quantity, "Compra · " + supplier, input.id + "-in", input.createdAt, input.id);
+  if (input.openingBalance) {
+    classifyLegacyConsignment(state, { purchaseId: input.id, productId: product.id, store: input.store,
+      quantity: input.quantity, unitCost: input.unitCost, consigned: input.acquisition === "consignada", supplier, date: input.date });
+  } else {
+    changeStock(state, product.id, input.store, input.quantity, "Compra · " + supplier, input.id + "-in", input.createdAt, input.id);
+    addLot(state, { purchaseId: input.id, productId: product.id, store: input.store, quantity: input.quantity,
+      unitCost: input.unitCost, consigned: input.acquisition === "consignada", supplier, date: input.date });
+  }
   const { due, ...purchase } = input;
   state.purchases.unshift({ ...purchase, supplier, total, productName: product.name, sku: product.sku });
-  addLot(state, { purchaseId: input.id, productId: product.id, store: input.store, quantity: input.quantity,
-    unitCost: input.unitCost, consigned: input.acquisition === "consignada", supplier, date: input.date });
-  if (input.acquisition && input.acquisition !== "consignada") {
+  if (!input.openingBalance && input.acquisition && input.acquisition !== "consignada") {
     state.ledger.unshift({
       id: input.id + "-payable", store: input.store, name: "Compra · " + supplier, kind: "estoque", direction: "out",
       amount: total, date: input.date, due: input.acquisition === "a-pagar" ? due! : input.date, settlements: input.acquisition === "quitada"
@@ -414,7 +423,7 @@ export function recordSale(state: RetailState, input: SaleInput, gift = false) {
   if (contact) contact.stage = "Ganho";
 }
 
-export type CheckoutItem = { productId: string; quantity: number; origin: string; gift: boolean };
+export type CheckoutItem = { productId: string; quantity: number; origin: string; gift: boolean; unitCostOverride?: number };
 export type CheckoutPayment = { method: SalePayment["method"]; amount: number; received: boolean; due: string; rateId?: string };
 export type CheckoutInput = Omit<SaleInput, "productId" | "quantity" | "method" | "origin" | "receive"> & {
   items: CheckoutItem[]; payments: CheckoutPayment[]; taxRateId?: string; manualTax?: number;
@@ -453,6 +462,7 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
   let allocatedDiscount = 0;
   const snapshots = input.items.map((item, index) => {
     const product = productById(draft, item.productId);
+    if (!item.origin || item.origin === "legacy") throw new RetailError("Selecione o lote de compra de cada item. Regularize saldos antigos em Compras.");
     const lineGross = product.price * item.quantity;
     if (!item.gift) priced += lineGross;
     const share = gross ? Math.round(priced / gross * input.discount) : 0;
@@ -463,6 +473,12 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
       sellerId: input.sellerId, createdAt: input.createdAt, productId: item.productId, quantity: item.quantity,
       origin: item.origin, discount, method: payments[0]?.method ?? "Pix" }, item.gift);
     const sale = draft.sales.shift()!;
+    if (item.unitCostOverride !== undefined) {
+      const cost = item.unitCostOverride * item.quantity;
+      if (!Number.isSafeInteger(cost) || cost < 0) throw new RetailError("Confira o custo unitário informado.");
+      sale.cost = cost;
+      sale.missingCostUnits = 0;
+    }
     return { sale, gift: item.gift };
   });
   const first = snapshots.find((row) => !row.gift)!.sale;
@@ -494,6 +510,32 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
   Object.assign(state, draft);
 }
 
+export function updatePurchaseCost(state: RetailState, id: string, unitCost: number) {
+  const purchase = state.purchases.find((item) => item.id === id);
+  if (!purchase) throw new RetailError("Compra não encontrada.");
+  const total = unitCost * purchase.quantity;
+  if (!Number.isSafeInteger(total) || unitCost <= 0) throw new RetailError("Informe um custo unitário positivo.");
+  if (unitCost === purchase.unitCost) return;
+  const payable = state.ledger.find((entry) => entry.id === id + "-payable");
+  if (payable && settledAmount(payable) > total) throw new RetailError("O novo total é menor que as baixas da compra. Ajuste as baixas no Financeiro primeiro.");
+  if (payable) payable.amount = total;
+  purchase.unitCost = unitCost;
+  purchase.total = total;
+  for (const lot of state.stockLots) if (lot.purchaseId === id) lot.unitCost = unitCost;
+}
+
+export function updateSaleCosts(state: RetailState, id: string, costs: number[]) {
+  const sale = state.sales.find((item) => item.id === id);
+  if (!sale || sale.canceledAt) throw new RetailError("Venda ativa não encontrada.");
+  const lines = sale.lines ?? [sale];
+  if (costs.length !== lines.length || costs.some((cost) => !Number.isSafeInteger(cost) || cost < 0)) throw new RetailError("Confira o custo de cada item.");
+  const total = costs.reduce((sum, cost) => sum + cost, 0);
+  if (!Number.isSafeInteger(total)) throw new RetailError("Custo total fora do limite.");
+  sale.lines?.forEach((line, index) => { line.cost = costs[index]; line.missingCostUnits = 0; });
+  sale.cost = total;
+  sale.missingCostUnits = 0;
+}
+
 export function cancelSale(state: RetailState, id: string, date: string, refundConfirmed = false) {
   const sale = state.sales.find((item) => item.id === id);
   if (!sale) throw new RetailError("Venda não encontrada.");
@@ -508,7 +550,10 @@ export function cancelSale(state: RetailState, id: string, date: string, refundC
   for (const [index, line] of lines.entries()) {
     changeStock(state, line.productId, sale.store, line.quantity, "Cancelamento de venda", sale.id + "-return-" + index, date, sale.id);
   }
-  for (const lot of sale.allocations ?? []) addLot(state, lot);
+  for (const lot of sale.allocations ?? []) {
+    const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
+    addLot(state, purchase ? { ...lot, unitCost: purchase.unitCost } : lot);
+  }
   for (const entry of linked) entry.canceled = true;
   if (received) {
     const day = businessDate(new Date(date));

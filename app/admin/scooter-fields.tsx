@@ -26,7 +26,7 @@ export function ProductCategoryFields({ product }: { product?: Pick<Product, "ca
   </>;
 }
 
-type PurchaseProduct = Pick<Product, "id" | "name" | "sku" | "category" | "specs" | "purchaseCost">;
+type PurchaseProduct = Pick<Product, "id" | "name" | "sku" | "category" | "specs">;
 
 export function PurchaseProductFields({ products, initialId }: { products: PurchaseProduct[]; initialId?: string }) {
   const [id, setId] = useState(initialId ?? "");
@@ -36,8 +36,7 @@ export function PurchaseProductFields({ products, initialId }: { products: Purch
       <option value="" disabled>Selecione um produto</option>
       {products.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.sku}</option>)}
     </select></label>
-    <label>Custo unitário da compra (R$)<input key={id} name="unitCost" type="number" min=".01" max="99999999.99" step=".01"
-      defaultValue={product?.purchaseCost != null ? product.purchaseCost / 100 : ""} required /></label>
+    <label>Custo unitário da compra (R$)<input key={id} name="unitCost" inputMode="decimal" placeholder="0,00" required /></label>
     {product?.category === scooterCategory && <ScooterFields key={id} specs={product.specs} purchase />}
   </>;
 }

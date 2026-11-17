@@ -4,9 +4,9 @@ import { useState } from "react";
 import { money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
 import { parseReais } from "@/domain/money-input";
 
-type Item = { key: number; productId: string; quantity: number; gift: boolean; origin: string };
+type Item = { key: number; productId: string; quantity: number; gift: boolean; origin: string; override?: string };
 type Payment = { key: number; method: typeof paymentMethods[number]; value: string; rateId: string; received: boolean; due: string };
-type SaleProduct = Pick<Product, "id" | "name" | "sku" | "price" | "stock" | "purchaseCost">;
+type SaleProduct = Pick<Product, "id" | "name" | "sku" | "price" | "stock">;
 
 export function CheckoutFields({ units, initialStore, products, lots, rates, sellers, showCost, taxRates }: {
   units: readonly Store[]; initialStore: string; products: SaleProduct[]; lots: StockLot[]; rates: CardRate[]; taxRates: TaxRate[]; sellers: { id: string; name: string; store: string; commissionBps: number }[]; showCost: boolean;
@@ -32,14 +32,16 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
     const product = available.find((entry) => entry.id === item.productId);
     if (!product) continue;
     let remaining = item.quantity;
-    for (const lot of availableLots.filter((lot) => lot.productId === item.productId && (!item.origin || item.origin === lot.purchaseId))) {
+    let lotCost = 0;
+    for (const lot of availableLots.filter((lot) => lot.productId === item.productId && item.origin === lot.purchaseId)) {
       const quantity = Math.min(remaining, Math.max(0, lot.quantity - (usedLots.get(lot.purchaseId) ?? 0)));
-      cost += quantity * lot.unitCost;
+      lotCost += quantity * lot.unitCost;
       remaining -= quantity;
       usedLots.set(lot.purchaseId, (usedLots.get(lot.purchaseId) ?? 0) + quantity);
     }
-    if (remaining && product.purchaseCost == null) missingCost = true;
-    cost += remaining * (product.purchaseCost ?? 0);
+    const override = item.override?.trim() ? parseReais(item.override) : lotCost;
+    if (remaining || override === null) missingCost = true;
+    else cost += item.override?.trim() ? override * item.quantity : override;
   }
   const fees = payments.reduce((sum, payment) => {
     const rate = payment.method === "Cartão" ? rates.find((item) => item.id === payment.rateId) : undefined;
@@ -59,7 +61,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
       : <label>Unidade<select required value={store} onChange={(event) => {
         setStore(event.target.value);
         setSeller("");
-        setItems(items.map((item) => ({ ...item, productId: "", origin: "" })));
+        setItems(items.map((item) => ({ ...item, productId: "", origin: "", override: "" })));
       }}><option value="">Selecione a unidade</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
     <input type="hidden" name="store" value={store} />
     <label>Vendedor da unidade<select name="sellerId" value={sellerId} onChange={(event) => setSeller(event.target.value)}>
@@ -69,15 +71,18 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
     <fieldset className="address-fields span-two checkout-group">
       <legend>Produtos e brindes</legend>
       {items.map((item, index) => <div className="checkout-row span-two" key={item.key}>
-        <label>Produto<select name="checkoutProduct" required value={item.productId} onChange={(event) => patchItem(item.key, { productId: event.target.value, origin: "" })}>
+        <label>Produto<select name="checkoutProduct" required value={item.productId} onChange={(event) => patchItem(item.key, { productId: event.target.value, origin: "", override: "" })}>
           <option value="">Selecione</option>{available.filter((product) => item.gift || product.price > 0).map((product) => <option key={product.id} value={product.id}>{product.name} · {money(product.price)} · {product.stock[store]} un.</option>)}</select></label>
         <label>Quantidade<input name="checkoutQuantity" type="number" min="1" max="999999" required value={item.quantity || ""} onChange={(event) => patchItem(item.key, { quantity: Number(event.target.value) })} /></label>
-        <label>Tipo<select name="checkoutKind" value={item.gift ? "gift" : "sale"} onChange={(event) => patchItem(item.key, { gift: event.target.value === "gift", productId: "", origin: "" })}>
+        <label>Tipo<select name="checkoutKind" value={item.gift ? "gift" : "sale"} onChange={(event) => patchItem(item.key, { gift: event.target.value === "gift", productId: "", origin: "", override: "" })}>
           <option value="sale">Venda</option><option value="gift">Brinde</option></select></label>
-        <label>Origem<select name="checkoutOrigin" value={item.origin} onChange={(event) => patchItem(item.key, { origin: event.target.value })}>
-          <option value="">Automática</option><option value="legacy">Saldo avulso</option>
-          {availableLots.filter((lot) => lot.productId === item.productId).map((lot) => <option key={lot.purchaseId} value={lot.purchaseId}>{lot.consigned ? "Consignado" : "Próprio"} · {lot.supplier} · {lot.quantity} un.</option>)}
+        <label>Lote da compra<select name="checkoutOrigin" required value={item.origin} onChange={(event) => patchItem(item.key, { origin: event.target.value, override: "" })}>
+          <option value="">Selecione o lote</option>
+          {availableLots.filter((lot) => lot.productId === item.productId).map((lot) => <option key={lot.purchaseId} value={lot.purchaseId}>{lot.consigned ? "Consignado" : "Próprio"} · {lot.supplier} · {lot.date.split("-").reverse().join("/")} · {lot.quantity} un.{showCost ? " · " + money(lot.unitCost) + "/un." : ""}</option>)}
         </select></label>
+        {showCost && <label>Ajustar custo unitário (R$)<input name="checkoutCost" inputMode="decimal" maxLength={32} placeholder="Usar custo do lote"
+          value={item.override ?? ""} onChange={(event) => patchItem(item.key, { override: event.target.value })} /></label>}
+        {item.productId && !availableLots.some((lot) => lot.productId === item.productId) && <p className="form-note span-two">Saldo sem lote. Vincule as unidades antigas a uma compra antes de vender.</p>}
         {index > 0 && <button type="button" className="button danger" onClick={() => setItems(items.filter((row) => row.key !== item.key))}>Remover item</button>}
       </div>)}
       <button type="button" className="button" disabled={items.length >= 20} onClick={() => setItems([...items, { key: Math.max(...items.map((row) => row.key)) + 1, productId: "", quantity: 1, gift: false, origin: "" }])}>＋ Adicionar produto ou brinde</button>

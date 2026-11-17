@@ -146,15 +146,22 @@ test("classificação de saldo avulso e transferência preservam o total consign
   assert.equal(stockComposition(state).owned, 2);
 });
 
+function linkOldStock(state, id, productId, store, unitCost) {
+  recordPurchase(state, { id, productId, store, unitCost, quantity: 1, supplier: "Fornecedor",
+    date: "2026-11-07", createdAt: date, acquisition: "quitada", openingBalance: true });
+}
+
 test("venda combinada contabiliza taxa e brinde, baixa parcial e devolve o estoque", () => {
   const state = fixture();
   state.products[0].purchaseCost = 300000;
   state.products.push({ ...state.products[0], id: "brinde", name: "Capacete", category: "Acessório", price: 0,
     purchaseCost: 15000, stock: { palhoca: 1 } });
+  linkOldStock(state, "lote-scooter", "scooter", "palhoca", 300000);
+  linkOldStock(state, "lote-brinde", "brinde", "palhoca", 15000);
   state.cardRates.push({ id: "rate", name: "Teste", mode: "Crédito", installments: 3, basisPoints: 500 });
   const checkout = { ...input, discount: 0, items: [
-    { productId: "scooter", quantity: 1, gift: false, origin: "" },
-    { productId: "brinde", quantity: 1, gift: true, origin: "" },
+    { productId: "scooter", quantity: 1, gift: false, origin: "lote-scooter" },
+    { productId: "brinde", quantity: 1, gift: true, origin: "lote-brinde" },
   ], payments: [
     { method: "Pix", amount: 99900, received: true, due: "" },
     { method: "Cartão", amount: 500000, received: false, due: "2026-11-08", rateId: "rate" },
@@ -183,8 +190,10 @@ test("venda combinada contabiliza taxa e brinde, baixa parcial e devolve o estoq
 test("imposto padrão calcula sobre a venda com desconto e o manual aceita zero", () => {
   const state = fixture();
   state.products[0].purchaseCost = 300000;
+  linkOldStock(state, "lote-scooter", "scooter", "palhoca", 300000);
+  linkOldStock(state, "lote-sj", "scooter", "sao-jose", 300000);
   state.taxRates = [{ id: "taxa", name: "Imposto de venda", basisPoints: 600, defaultForSale: true }];
-  const checkout = { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "" }],
+  const checkout = { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "lote-scooter" }],
     payments: [{ method: "Pix", amount: 589900, received: true, due: "" }] };
   assert.throws(() => recordCheckout(state, { ...checkout, manualTax: 589901 }));
   recordCheckout(state, checkout);
@@ -194,6 +203,6 @@ test("imposto padrão calcula sobre a venda com desconto e o manual aceita zero"
   assert.equal(report.taxes, 35394);
   assert.equal(report.cash, 589900);
   assert.equal(report.result, 254506);
-  recordCheckout(state, { ...checkout, id: "venda-manual", store: "sao-jose", manualTax: 0 });
+  recordCheckout(state, { ...checkout, id: "venda-manual", store: "sao-jose", manualTax: 0, items: [{ ...checkout.items[0], origin: "lote-sj" }] });
   assert.equal(state.sales[0].tax.amount, 0);
 });

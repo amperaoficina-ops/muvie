@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelSale, changeStock, classifyLegacyConsignment, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordSale, recordCheckout,
+  acquisitionTypes, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, updateSaleCosts, updatePurchaseCost,
   postMonthlyCosts, reverseSettlement, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -117,7 +117,7 @@ export async function saveProduct(form: FormData) {
       sku, name: value(form, "name", 100), category,
       specs: category === scooterCategory ? readScooterSpecs(form) : null,
       price: amount(form, "price"),
-      purchaseCost: value(form, "purchaseCost", 32, false) ? amount(form, "purchaseCost") : null,
+      purchaseCost: current?.purchaseCost ?? null,
       description: value(form, "description", 350, false),
       published: current?.published ?? false, imageUrl,
     };
@@ -197,22 +197,19 @@ export async function updateStock(form: FormData) {
   const id = randomUUID();
   const date = new Date().toISOString();
   await commit(form, "estoque", "Estoque atualizado.", (state) => {
-    const mode = choice(form, "mode", ["entrada", "saida", "transferencia", "consignada", "classificar"]);
+    const mode = choice(form, "mode", ["saida", "transferencia"]);
     const product = value(form, "productId");
     const store = choice(form, "store", storeIds(state));
     const quantity = units(form);
     if (mode === "transferencia") transferStock(state, product, store, choice(form, "destination", storeIds(state)), quantity, id, date);
-    else if (mode === "classificar") classifyLegacyConsignment(state, { purchaseId: id, productId: product, store, quantity,
-      unitCost: amount(form, "unitCost"), supplier: value(form, "supplier", 100), date: localToday(), consigned: true });
-    else if (mode === "consignada") recordPurchase(state, { id, store, productId: product, supplier: value(form, "supplier", 100), contactId: "", quantity, unitCost: amount(form, "unitCost"), date: localToday(), createdAt: date, invoiceNumber: "", notes: "Entrada pelo estoque", acquisition: "consignada" });
-    else changeStock(state, product, store, mode === "entrada" ? quantity : -quantity, value(form, "reason", 100), id, date);
+    else changeStock(state, product, store, -quantity, value(form, "reason", 100), id, date);
   });
 }
 
 export async function saveSale(form: FormData) {
   const newContactId = randomUUID();
   const createdAt = new Date().toISOString();
-  await commit(form, "vendas", "Venda registrada.", (state) => {
+  await runAction(form, "vendas", "Venda registrada.", (user) => editWithAudit(user, "Venda registrada.", (state) => {
     const id = value(form, "saleId", 36);
     if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário de venda.");
     if (state.sales.some((sale) => sale.id === id)) return;
@@ -230,6 +227,8 @@ export async function saveSale(form: FormData) {
       const products = form.getAll("checkoutProduct");
       const quantities = form.getAll("checkoutQuantity");
       const origins = form.getAll("checkoutOrigin");
+      const overrides = form.getAll("checkoutCost");
+      if (!canAccess(user, "financeiro") && overrides.some((item) => String(item).trim())) throw new RetailError("Sem permissão para editar custos.");
       const kinds = form.getAll("checkoutKind");
       const methods = form.getAll("checkoutMethod");
       const amounts = form.getAll("checkoutAmount");
@@ -242,7 +241,8 @@ export async function saveSale(form: FormData) {
         taxRateId: value(form, "taxRateId", 36, false),
         manualTax: manualTax === undefined ? undefined : amount(form, "manualTax"),
         items: products.map((productId, index) => ({ productId: String(productId), quantity: Number(quantities[index]),
-          origin: String(origins[index] ?? ""), gift: kinds[index] === "gift" })),
+          origin: String(origins[index] ?? ""), gift: kinds[index] === "gift",
+          unitCostOverride: String(overrides[index] ?? "").trim() ? parseReais(String(overrides[index])) ?? -1 : undefined })),
         payments: methods.flatMap((method, index) => {
           const matched = paymentMethods.find((item) => item === method);
           const paid = parseReais(String(amounts[index] ?? ""));
@@ -254,15 +254,8 @@ export async function saveSale(form: FormData) {
       });
       return;
     }
-    recordSale(state, {
-      id, store, productId: value(form, "productId"), customer, contactId,
-      quantity: units(form), discount: amount(form, "discount"),
-      method: choice(form, "method", paymentMethods), createdAt,
-      sellerId: value(form, "sellerId", 36, false),
-      origin: value(form, "origin", 36, false),
-      receive: form.has("receive") ? { mode: choice(form, "receive", ["pending", "received"]), due: value(form, "due", 10, false) } : undefined,
-    });
-  });
+    throw new RetailError("Reabra a página para registrar a venda com lotes de compra.");
+  }));
 }
 
 export async function savePurchase(form: FormData) {
@@ -275,7 +268,7 @@ export async function savePurchase(form: FormData) {
     const productId = value(form, "productId");
     const product = state.products.find((item) => item.id === productId);
     recordPurchase(state, {
-      id, date, createdAt, store: choice(form, "store", storeIds(state)), productId,
+      id, date, createdAt, openingBalance: form.get("openingBalance") === "on", store: choice(form, "store", storeIds(state)), productId,
       ...(product?.category === scooterCategory && { specs: readScooterSpecs(form) }),
       supplier: value(form, "supplier", 100, false), contactId: value(form, "contactId", 36, false),
       quantity: units(form), unitCost: amount(form, "unitCost"),
@@ -503,5 +496,21 @@ export async function saveTaxRate(form: FormData) {
     const fields = { name, basisPoints, defaultForSale };
     if (current) Object.assign(current, fields);
     else rates.push({ id: newId, ...fields });
+  });
+}
+
+export async function savePurchaseCost(form: FormData) {
+  await commit(form, "compras", "Custo da compra atualizado.", (state) => {
+    updatePurchaseCost(state, value(form, "focus", 36), amount(form, "unitCost"));
+  });
+}
+
+export async function saveSaleCosts(form: FormData) {
+  await runAction(form, "vendas", "Custos da venda atualizados.", async (user) => {
+    if (!canAccess(user, "financeiro")) throw new RetailError("Sem permissão para editar custos.");
+    await editWithAudit(user, "Custos da venda atualizados.", (state) => {
+      const costs = form.getAll("lineCost").map((item) => typeof item === "string" && item.trim() ? parseReais(item) ?? -1 : -1);
+      updateSaleCosts(state, value(form, "focus", 36), costs);
+    });
   });
 }

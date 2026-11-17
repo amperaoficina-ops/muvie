@@ -16,7 +16,7 @@ import {
   balanceDue, money, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes } from "./actions";
+import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, saveSaleCosts } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -198,7 +198,6 @@ function ProductForm({ filter, product }: { filter: Filter; product?: Product })
     <label>SKU<input name="sku" required maxLength={40} defaultValue={product?.sku} placeholder="Código do produto" /></label>
     <ProductCategoryFields product={product && { category: product.category, specs: product.specs }} />
     <label>Preço de venda (R$)<input name="price" inputMode="decimal" maxLength={32} defaultValue={product ? (product.price / 100).toFixed(2).replace(".", ",") : ""} placeholder="0,00" /></label>
-    <label>Custo unitário de referência (R$)<input name="purchaseCost" inputMode="decimal" maxLength={32} defaultValue={product?.purchaseCost != null ? (product.purchaseCost / 100).toFixed(2).replace(".", ",") : ""} placeholder="Opcional" /></label>
     {product?.imageUrl && <div className="product-photo-preview span-two">
       <Image src={product.imageUrl} alt={product.name} width={96} height={72} unoptimized />
       <label className="checkbox"><input name="removePhoto" type="checkbox" /> Retirar a foto atual</label>
@@ -213,7 +212,7 @@ function Products({ products, filter }: { products: Product[]; filter: Filter })
   return <div className="operation-grid"><section className="panel">
     <div className="panel-title"><h2>Produtos cadastrados</h2><span className="pill">{products.length} no catálogo</span></div>
     {products.length ? <div className="editable-list">{products.map((product) => <details key={product.id}>
-      <summary><span><strong>{product.name}</strong><small>{product.sku} · {product.category}{product.purchaseCost != null && " · Custo ref. " + money(product.purchaseCost)}</small></span><span className="pill">{product.published ? "Na landing" : "Interno"}</span><strong>{money(product.price)}</strong></summary>
+      <summary><span><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></span><span className="pill">{product.published ? "Na landing" : "Interno"}</span><strong>{money(product.price)}</strong></summary>
       <ProductForm product={product} filter={filter} />
       <div className="record-actions"><Link className="back-link" href={adminUrl("compras", filter) + "&produto=" + product.id}>Registrar compra deste produto →</Link></div>
     </details>)}</div> : <Empty>Cadastre seu primeiro produto para liberar movimentações e vendas.</Empty>}
@@ -235,12 +234,19 @@ function Purchases({ state, filter, invoices, focus, productId }: {
             <span className="pill">{purchaseStatus(state, purchase.id, purchase.acquisition)}</span><strong>{money(purchase.total)}</strong></summary>
           <div className="record-actions">
             <p>{purchase.sku} · {purchase.quantity} un. × {money(purchase.unitCost)}</p>
+            {purchase.openingBalance && <p>Regularização de saldo anterior</p>}
             {purchase.invoiceNumber && <p>Nota fiscal nº {purchase.invoiceNumber}</p>}
             {purchase.notes && <p>{purchase.notes}</p>}
             {purchase.specs && <dl className="purchase-specs">{scooterFields.filter(({ key }) => purchase.specs?.[key]).map(({ key, label }) => (
               <div key={key}><dt>{label}</dt><dd>{purchase.specs?.[key]}</dd></div>
             ))}</dl>}
           </div>
+          <form className="admin-form" action={savePurchaseCost}>
+            <FilterInput filter={filter} /><input type="hidden" name="focus" value={purchase.id} />
+            <label>Custo unitário do lote (R$)<input name="unitCost" inputMode="decimal" required defaultValue={(purchase.unitCost / 100).toFixed(2).replace(".", ",")} /></label>
+            <div><Submit>Atualizar custo do lote</Submit></div>
+            <p className="form-note span-two">As vendas já registradas mantêm seus custos. Ajuste-as pelo histórico de vendas, se necessário.</p>
+          </form>
           <InvoiceBox owner="purchase" id={purchase.id} filter={filter} invoices={invoices} />
         </details>
       ))}</div> : <Empty>As compras registradas nesta unidade aparecerão aqui.</Empty>}
@@ -251,7 +257,7 @@ function Purchases({ state, filter, invoices, focus, productId }: {
         <FilterInput filter={filter} />
         <input type="hidden" name="purchaseId" value={purchaseId} />
         <input type="hidden" name="focus" value={purchaseId} />
-        <PurchaseProductFields initialId={product?.id} products={state.products.map(({ id, name, sku, category, specs, purchaseCost }) => ({ id, name, sku, category, specs, purchaseCost }))} />
+        <PurchaseProductFields initialId={product?.id} products={state.products.map(({ id, name, sku, category, specs }) => ({ id, name, sku, category, specs }))} />
         <StoreField units={storeList(state)} filter={filter} label="Unidade que recebe o estoque" />
         <label>Fornecedor<input name="supplier" maxLength={100} placeholder="Nome ou razão social" /></label>
         <label>Cliente vinculado (opcional)<select name="contactId"><option value="">Sem vínculo</option>{state.contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name} · {storeName(contact.store, state)}</option>)}</select></label>
@@ -264,7 +270,8 @@ function Purchases({ state, filter, invoices, focus, productId }: {
         </select></label>
         <label>Vencimento (se a pagar)<input name="due" type="date" /></label>
         <label className="span-two">Observações<textarea name="notes" rows={2} maxLength={500} /></label>
-        <p className="form-note span-two">Ao registrar, o estoque recebe a quantidade automaticamente. Anexe a nota no histórico após salvar.</p>
+        <label className="checkbox span-two"><input name="openingBalance" type="checkbox" /> Vincular esta compra a unidades antigas que já estão no estoque</label>
+        <p className="form-note span-two">Uma compra nova cria um lote e dá entrada no estoque. Ao vincular saldo antigo, o lote recebe o custo sem duplicar unidades nem gerar cobrança.</p>
         <div className="span-two"><Submit>Registrar compra</Submit></div>
       </form> : <Empty><Link href={adminUrl("produtos", filter)}>Cadastre um produto para registrar compras →</Link></Empty>}
     </section>
@@ -281,7 +288,7 @@ function purchaseStatus(state: RetailState, id: string, condition?: string) {
   return "Histórico sem classificação";
 }
 
-function Stock({ state, filter, category }: { state: RetailState; filter: Filter; category?: Product["category"] }) {
+function Stock({ state, filter, category, showPurchases }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean }) {
   const products = state.products.filter((product) => !category || product.category === category);
   const ids = new Set(products.map((product) => product.id));
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
@@ -309,7 +316,7 @@ function Stock({ state, filter, category }: { state: RetailState; filter: Filter
           </div>}
         </td>)}</tr>)}</Table> : <Empty>Nenhum produto nesta seleção.</Empty>}
       </section>
-      <section id="movimentar-estoque" className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
+      <section id="movimentar-estoque" className="panel"><div className="panel-title"><h2>Movimentar estoque</h2>{showPurchases && <Link className="back-link" href={adminUrl("compras", filter) + "#registrar-compra"}>Dar entrada por compra →</Link>}</div>
         {products.length ? <form action={updateStock} className="admin-form">
           <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><ProductField products={products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
           <StockFields units={storeList(state)} />
@@ -318,12 +325,12 @@ function Stock({ state, filter, category }: { state: RetailState; filter: Filter
       </section>
     </div>
     <section id="lotes-estoque" className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
-      {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo"]}>{lots.map((lot) => {
+      {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
         return <tr key={lot.purchaseId + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{storeName(lot.store, state)}</td>
-          <td>{lot.supplier}</td><td>{lot.consigned ? "Consignado" : "Próprio"}{purchase && " · " + purchaseStatus(state, lot.purchaseId, purchase.acquisition)}</td><td>{lot.quantity} un.</td></tr>;
+          <td>{lot.supplier}</td><td>{lot.consigned ? "Consignado" : "Próprio"}{purchase && " · " + purchaseStatus(state, lot.purchaseId, purchase.acquisition)}</td><td>{lot.quantity} un.</td>{showPurchases && <td>{money(lot.unitCost)}{purchase && <small><Link className="back-link" href={adminUrl("compras", purchase.store) + "&ficha=" + purchase.id}>Abrir compra</Link></small>}</td>}</tr>;
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
-      <p className="admin-empty">Saldos manuais e registros anteriores podem aparecer no saldo geral sem lote associado.</p>
+      <p className="admin-empty">Para vender unidades antigas sem lote, registre a compra em Compras e marque a opção de vincular ao saldo já existente.</p>
     </section>
     <section id="movimentacoes-estoque" className="panel"><div className="panel-title"><h2>Histórico de movimentações</h2></div>
       {movements.length ? <Table headers={["Data", "Produto", "Unidade", "Movimento", "Quantidade"]}>{movements.map((movement) => <tr key={movement.id}><td>{dateLabel(movement.createdAt)}</td><td>{movement.productName}</td><td>{storeName(movement.store, state)}</td><td>{movement.reason}</td><td>{movement.quantity > 0 ? "+" : ""}{movement.quantity}</td></tr>)}</Table> : <Empty>O histórico desta unidade está vazio.</Empty>}
@@ -379,7 +386,7 @@ function SaleFollowUp({ state, sales, invoices, filter }: {
   </section>;
 }
 
-function SalesTable({ state, sales, filter, canCancel = false, invoices = [], focus }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[]; focus?: string }) {
+function SalesTable({ state, sales, filter, canCancel = false, invoices = [], focus, showCost = false }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[]; focus?: string; showCost?: boolean }) {
   return <Table headers={["Venda", "Unidade", "Total", "Status", ...(canCancel ? ["Ação"] : [])]}>{sales.map((sale) => {
     const receivable = state.ledger.filter((entry) => entry.saleId === sale.id && entry.kind === "venda");
     const status = sale.canceledAt ? "Cancelada" : !receivable.length ? "Registrada" : receivable.some((entry) => balanceDue(entry) > 0) ? "A receber" : "Recebida";
@@ -389,7 +396,16 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices = [], fo
       <td><span className={"pill " + (sale.canceledAt ? "" : "green")}>{status}</span></td>
       {canCancel && <td><details className="sale-documents" open={focus === sale.id}><summary>Documentos</summary>
         <SaleDocuments sale={sale} filter={filter} invoices={invoices} />
-      </details>{!sale.canceledAt && <details className="cancel-sale"><summary>Cancelar</summary>
+      </details>{showCost && !sale.canceledAt && <details className="sale-documents"><summary>Editar custos</summary>
+        <form action={saveSaleCosts} className="invoice-form">
+          <FilterInput filter={filter} /><input type="hidden" name="focus" value={sale.id} />
+          {(sale.lines ?? [sale]).map((line, index) => <label key={index}>{line.productName} · custo total de {line.quantity} un.
+            <input name="lineCost" inputMode="decimal" required maxLength={32}
+              defaultValue={line.cost == null || line.missingCostUnits ? "" : (line.cost / 100).toFixed(2).replace(".", ",")} />
+          </label>)}
+          <Submit>Salvar custos</Submit>
+        </form>
+      </details>}{!sale.canceledAt && <details className="cancel-sale"><summary>Cancelar</summary>
         <form action={reverseSale}><FilterInput filter={filter} /><input type="hidden" name="saleId" value={sale.id} />
           <p>As unidades voltam ao estoque de {storeName(sale.store, state)}.</p>
           <label className="checkbox"><input type="checkbox" name="refund" /> Já devolvi o valor recebido, se houver</label>
@@ -411,7 +427,7 @@ function Sales({ state, filter, invoices, focus, error, showCost }: { state: Ret
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
         <SaleCustomer contacts={contacts.map((contact) => ({ id: contact.id, label: contact.name + " · " + storeName(contact.store, state) }))} />
         <CheckoutFields units={storeList(state)} initialStore={filter} rates={state.cardRates} taxRates={state.taxRates ?? []}
-          products={state.products.map(({ id, name, sku, price, stock, purchaseCost }) => ({ id, name, sku, price, stock, purchaseCost: showCost ? purchaseCost : undefined }))}
+          products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))}
           showCost={showCost}
           sellers={state.staff.filter((item) => item.active && (!filter || item.store === filter)).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps: showCost ? commissionBps : 0 }))}
           lots={state.stockLots.map((lot) => ({ ...lot, unitCost: showCost ? lot.unitCost : 0 }))} />
@@ -419,7 +435,7 @@ function Sales({ state, filter, invoices, focus, error, showCost }: { state: Ret
       </form> : <Empty>Para registrar uma venda, cadastre um produto com preço e adicione saldo à unidade em <Link href={adminUrl("estoque", filter)}>Estoque</Link>.</Empty>}
     </SaleDialog>
     {invoices && <SaleFollowUp state={state} sales={sales} invoices={invoices} filter={filter} />}
-    <section id="historico-vendas" className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable state={state} sales={sales} filter={filter} canCancel invoices={invoices ?? []} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
+    <section id="historico-vendas" className="panel"><div className="panel-title"><h2>Histórico de vendas</h2></div>{sales.length ? <SalesTable state={state} sales={sales} filter={filter} canCancel showCost={showCost} invoices={invoices ?? []} focus={focus} /> : <Empty>Nenhuma venda registrada para este filtro.</Empty>}</section>
   </div>;
 }
 
@@ -579,7 +595,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <nav aria-label="Seções do estoque" className="workspace-section-links">
               <a href="#lotes-estoque">Lotes em estoque</a><a href="#movimentacoes-estoque">Movimentações</a>
             </nav>
-            <Stock state={state} filter={filter} category={category} />
+            <Stock state={state} filter={filter} category={category} showPurchases={showPurchases} />
           </>}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
