@@ -1,3 +1,4 @@
+import { CheckoutFields } from "./checkout-fields";
 import { SaleDialog } from "./sale-dialog";
 import { AttachmentPicker } from "./attachment-picker";
 import { MobileMenu } from "./mobile-menu";
@@ -11,7 +12,7 @@ import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
 import { readRetail } from "@/lib/retail-store";
 import {
-  balanceDue, money, paymentMethods, productCategories, stages, stockComposition, storeName, storeList,
+  balanceDue, money, productCategories, stages, stockComposition, storeName, storeList,
   type Contact, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
 import { attachInvoice, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes } from "./actions";
@@ -363,8 +364,8 @@ function SaleFollowUp({ state, sales, invoices, filter }: {
       <div><p>Sem nota anexada</p><strong>{missing.length}</strong></div>
       <div><p>Com nota anexada</p><strong>{active.length - missing.length}</strong></div>
     </div>
-    {pending.length ? <div className="sale-pending-table">
-      <h3>Pendências</h3>
+    {pending.length ? <section className="sale-pending-table" aria-labelledby="sales-pending-title">
+      <div className="panel-title"><h3 id="sales-pending-title">Pendências de vendas</h3><span className="pill">{pending.length} em aberto</span></div>
       <Table headers={["Venda", "Unidade", "Total", "Pendência", "Ação"]}>{pending.map((sale) => <tr key={sale.id}>
         <td><strong>{sale.customer}</strong><small>{sale.productName}</small></td>
         <td>{storeName(sale.store, state)}</td><td>{money(sale.total)}</td>
@@ -372,17 +373,17 @@ function SaleFollowUp({ state, sales, invoices, filter }: {
           {!attached.has(sale.id) && <span className="pill">Sem nota anexada</span>}</td>
         <td><Link className="back-link" href={adminUrl("vendas", filter) + "&ficha=" + sale.id + "#venda-" + sale.id}>Abrir venda</Link></td>
       </tr>)}</Table>
-    </div> : <p className="admin-empty">Nenhuma pendência de recebimento ou anexo nesta seleção.</p>}
+    </section> : <p className="admin-empty">Nenhuma pendência de recebimento ou anexo nesta seleção.</p>}
   </section>;
 }
 
 function SalesTable({ state, sales, filter, canCancel = false, invoices = [], focus }: { state: RetailState; sales: Sale[]; filter: Filter; canCancel?: boolean; invoices?: InvoiceMeta[]; focus?: string }) {
   return <Table headers={["Venda", "Unidade", "Total", "Status", ...(canCancel ? ["Ação"] : [])]}>{sales.map((sale) => {
-    const receivable = state.ledger.find((entry) => entry.saleId === sale.id && entry.kind === "venda");
-    const status = sale.canceledAt ? "Cancelada" : !receivable ? "Registrada" : balanceDue(receivable) > 0 ? "A receber" : "Recebida";
+    const receivable = state.ledger.filter((entry) => entry.saleId === sale.id && entry.kind === "venda");
+    const status = sale.canceledAt ? "Cancelada" : !receivable.length ? "Registrada" : receivable.some((entry) => balanceDue(entry) > 0) ? "A receber" : "Recebida";
     return <tr key={sale.id} id={"venda-" + sale.id}>
-      <td><strong>{sale.customer}</strong><small>{sale.quantity} × {sale.productName} · {dateLabel(sale.createdAt)}</small>{sale.sellerName && <small>Vendedor: {sale.sellerName}</small>}</td>
-      <td>{storeName(sale.store, state)}</td><td><strong>{money(sale.total)}</strong><small>{sale.method}</small></td>
+      <td><strong>{sale.customer}</strong><small>{(sale.lines ?? [sale]).map((line) => line.quantity + " × " + line.productName + ("gift" in line && line.gift ? " (brinde)" : "")).join(" · ")} · {dateLabel(sale.createdAt)}</small>{sale.sellerName && <small>Vendedor: {sale.sellerName}</small>}</td>
+      <td>{storeName(sale.store, state)}</td><td><strong>{money(sale.total)}</strong><small>{sale.payments?.length ? sale.payments.map((payment) => payment.method + " " + money(payment.amount)).join(" · ") : sale.method}</small></td>
       <td><span className={"pill " + (sale.canceledAt ? "" : "green")}>{status}</span></td>
       {canCancel && <td><details className="sale-documents" open={focus === sale.id}><summary>Documentos</summary>
         <SaleDocuments sale={sale} filter={filter} invoices={invoices} />
@@ -396,7 +397,7 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices = [], fo
   })}</Table>;
 }
 
-function Sales({ state, filter, invoices, focus, error }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string; error?: string }) {
+function Sales({ state, filter, invoices, focus, error, showCost }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string; error?: string; showCost: boolean }) {
   const sales = state.sales.filter((sale) => !filter || sale.store === filter);
   const contacts = state.contacts.filter((contact) => !filter || contact.store === filter);
   const products = state.products.filter((product) => product.price > 0 && (filter ? product.stock[filter] > 0 : storeList(state).some((store) => product.stock[store.id] > 0)));
@@ -406,25 +407,12 @@ function Sales({ state, filter, invoices, focus, error }: { state: RetailState; 
       {error && <p className="feedback error" role="alert">{error}</p>}
       {products.length ? <form className="admin-form" action={saveSale}>
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
-        {filter ? <label>Unidade
-          <input value={storeName(filter, state)} readOnly />
-          <input type="hidden" name="store" value={filter} />
-        </label> : <StoreField units={storeList(state)} filter="" />}
-        <ProductField products={products} />
         <SaleCustomer contacts={contacts.map((contact) => ({ id: contact.id, label: contact.name + " · " + storeName(contact.store, state) }))} />
-        <label>Quantidade<input name="quantity" type="number" min="1" max="999999" defaultValue="1" required /></label>
-        <label>Desconto em reais<input name="discount" type="number" min="0" step=".01" placeholder="0,00" /></label>
-        <label className="span-two">Forma de pagamento<select name="method">{paymentMethods.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label>Vendedor da unidade<select name="sellerId"><option value="">Sem vendedor</option>
-          {state.staff.filter((item) => item.active && (!filter || item.store === filter)).map((item) => <option key={item.id} value={item.id}>{item.name} · {storeName(item.store, state)}</option>)}
-        </select></label>
-        <label>Recebimento<select name="receive" defaultValue="" required><option value="" disabled>Selecione</option><option value="received">Já recebido</option><option value="pending">A receber</option></select></label>
-        <label>Vencimento (se a receber)<input name="due" type="date" /></label>
-        <label className="span-two">Origem do estoque<select name="origin"><option value="">Automática · lote mais antigo</option><option value="legacy">Saldo avulso / sem lote</option>
-          {state.stockLots.filter((lot) => lot.quantity > 0 && (!filter || lot.store === filter)).map((lot) => <option key={lot.purchaseId + lot.store} value={lot.purchaseId}>
-            {state.products.find((item) => item.id === lot.productId)?.name} · {storeName(lot.store, state)} · {lot.consigned ? "Consignada" : "Própria"} · {lot.supplier} · {calendarLabel(lot.date)} · {lot.quantity} un.
-          </option>)}
-        </select><small>Quando houver estoque próprio e consignado do mesmo modelo, escolha a origem da moto vendida.</small></label>
+        <CheckoutFields units={storeList(state)} initialStore={filter} rates={state.cardRates}
+          products={state.products.map(({ id, name, sku, price, stock, purchaseCost }) => ({ id, name, sku, price, stock, purchaseCost: showCost ? purchaseCost : undefined }))}
+          showCost={showCost}
+          sellers={state.staff.filter((item) => item.active && (!filter || item.store === filter)).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps: showCost ? commissionBps : 0 }))}
+          lots={state.stockLots.map((lot) => ({ ...lot, unitCost: showCost ? lot.unitCost : 0 }))} />
         <div className="span-two"><Submit>Registrar venda</Submit></div>
       </form> : <Empty>Para registrar uma venda, cadastre um produto com preço e adicione saldo à unidade em <Link href={adminUrl("estoque", filter)}>Estoque</Link>.</Empty>}
     </SaleDialog>
@@ -593,7 +581,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           </>}
           {active.id === "compras" && <Purchases state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
-            <Sales state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
+            <Sales showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}

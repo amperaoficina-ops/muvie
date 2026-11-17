@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
-import { balanceDue, businessDate, financialReport, isCalendarDate, money, salesRanking, storeName, storeList,
+import { balanceDue, businessDate, financialReport, isCalendarDate, money, modelMarginRanking, salesRanking, storeName, storeList,
   type Asset, type FixedCost, type LedgerEntry, type RetailState, type Staff, type StoreId } from "@/domain/retail";
 import { launchMonth, saveLedgerEntry, saveStoreItem, updateLedger } from "./actions";
 import { Submit } from "./submit";
@@ -56,8 +56,14 @@ export function Rankings({ state, filter, period, admin }: { state: RetailState;
       <RankChart title="Modelos mais vendidos" rows={salesRanking(state, period.from, period.to, selected)} />
       <RankChart title="Vendas por vendedor" rows={salesRanking(state, period.from, period.to, selected, true)} />
     </div>
+    {report && <section className="panel">
+      <div className="panel-title"><h2>Margem por modelo</h2></div>
+      <dl className="finance-rows">{modelMarginRanking(state, period.from, period.to, selected).slice(0, 8).map((row) =>
+        <div key={row.label}><dt>{row.label}</dt><dd>{money(row.margin)}</dd></div>)}</dl>
+      <p className="admin-empty">Receita menos custo, taxas de cartão, comissão e brindes rateados pelo valor dos itens vendidos. Considera vendas com custo completo.</p>
+    </section>}
     {report && <div className="metrics-grid">
-      <Metric name="Custos e despesas do período" value={report.cost + report.commissions + report.fixed + report.salary + report.expenses} />
+      <Metric name="Custos e despesas do período" value={report.cost + report.cardFees + report.commissions + report.fixed + report.salary + report.expenses} />
       <Metric name="A pagar em aberto" value={report.payable} />
       <Metric name="A receber em aberto" value={report.receivable} />
       <Metric name="Movimento líquido de caixa" value={report.cash} />
@@ -156,7 +162,7 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
   const closed = entries.filter((item) => balanceDue(item) === 0 && item.settlements.some((row) => row.date >= period.from && row.date <= period.to || !!row.reversedOn && row.reversedOn >= period.from && row.reversedOn <= period.to));
   const rows: [string, number][] = [
     ["Receita líquida de descontos", report.revenue], ["Outras receitas", report.other], ["Custo das motos e produtos vendidos", -report.cost],
-    ["Comissões", -report.commissions], ["Salários lançados", -report.salary], ["Fixos lançados", -report.fixed], ["Outras despesas", -report.expenses],
+    ["Taxas de cartão", -report.cardFees], ["Comissões", -report.commissions], ["Salários lançados", -report.salary], ["Fixos lançados", -report.fixed], ["Outras despesas", -report.expenses],
   ];
   return <>
     <PeriodFilter tab="financeiro" filter={filter} period={period} />

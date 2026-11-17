@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, isCalendarDate, normalizeCpf, recordPurchase, recordSale, stockComposition, transferStock } from "../domain/retail.ts";
+import { cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, settleEntry, normalizeCpf, recordPurchase, recordSale, stockComposition, transferStock } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -144,4 +144,38 @@ test("classificação de saldo avulso e transferência preservam o total consign
   assert.equal(stockComposition(state, "nova").consigned, 1);
   assert.equal(stockComposition(state).cost, 20000);
   assert.equal(stockComposition(state).owned, 2);
+});
+
+test("venda combinada contabiliza taxa e brinde, baixa parcial e devolve o estoque", () => {
+  const state = fixture();
+  state.products[0].purchaseCost = 300000;
+  state.products.push({ ...state.products[0], id: "brinde", name: "Capacete", category: "Acessório", price: 0,
+    purchaseCost: 15000, stock: { palhoca: 1 } });
+  state.cardRates.push({ id: "rate", name: "Teste", mode: "Crédito", installments: 3, basisPoints: 500 });
+  const checkout = { ...input, discount: 0, items: [
+    { productId: "scooter", quantity: 1, gift: false, origin: "" },
+    { productId: "brinde", quantity: 1, gift: true, origin: "" },
+  ], payments: [
+    { method: "Pix", amount: 99900, received: true, due: "" },
+    { method: "Cartão", amount: 500000, received: false, due: "2026-11-08", rateId: "rate" },
+  ] };
+  const original = structuredClone(state);
+  assert.throws(() => recordCheckout(state, { ...checkout, payments: [] }));
+  assert.deepEqual(state, original);
+  recordCheckout(state, checkout);
+  recordCheckout(state, checkout);
+  assert.equal(state.sales.length, 1);
+  assert.equal(state.sales[0].cost, 315000);
+  assert.equal(state.sales[0].cardFees, 25000);
+  const card = state.ledger.find((entry) => entry.cardFee);
+  settleEntry(state, card.id, { id: "partial", amount: 200000, date: "2026-11-08" });
+  const report = financialReport(state, "2026-11-07", "2026-11-08");
+  assert.equal(report.cash, 289900);
+  assert.equal(report.receivable, 300000);
+  assert.equal(report.result, 259900);
+  assert.equal(modelMarginRanking(state, "2026-11-07", "2026-11-08")[0].margin, 259900);
+  assert.throws(() => cancelSale(state, input.id, "2026-11-09"));
+  cancelSale(state, input.id, "2026-11-09", true);
+  assert.equal(state.products[0].stock.palhoca, 1);
+  assert.equal(state.products[1].stock.palhoca, 1);
 });

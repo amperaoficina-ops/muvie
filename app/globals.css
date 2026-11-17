@@ -433,3 +433,9 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .sale-dialog .panel-title button { min-width: 44px; font-size: 1.25rem; }
 body:has(.sale-dialog[open]) { overflow: hidden; }
 .sale-pending-table h3 { padding: .65rem 1rem; font-size: .9rem; }
+
+.checkout-group { background: #f5f7fa; }
+.checkout-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); gap: .7rem; padding: .7rem 0; border-bottom: 1px solid #c4ccd8; }
+.checkout-group > button { justify-self: start; background: #fff; border-color: #a0aab8; }
+.checkout-summary { padding: 0; }
+.sale-pending-table .panel-title h3 { padding: 0; }

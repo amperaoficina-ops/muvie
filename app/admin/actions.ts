@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelSale, changeStock, classifyLegacyConsignment, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordSale,
+  acquisitionTypes, cancelSale, changeStock, classifyLegacyConsignment, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordSale, recordCheckout,
   postMonthlyCosts, reverseSettlement, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -225,6 +225,31 @@ export async function saveSale(form: FormData) {
       contactId = newContactId;
       state.contacts.unshift({ id: contactId, name: customer, phone: value(form, "phone", 32, false), email, cpf,
         store, stage: "Ganho", interest: "", nextContact: "", notes: "", createdAt });
+    }
+    if (form.has("checkoutProduct")) {
+      const products = form.getAll("checkoutProduct");
+      const quantities = form.getAll("checkoutQuantity");
+      const origins = form.getAll("checkoutOrigin");
+      const kinds = form.getAll("checkoutKind");
+      const methods = form.getAll("checkoutMethod");
+      const amounts = form.getAll("checkoutAmount");
+      const rates = form.getAll("checkoutRate");
+      const statuses = form.getAll("checkoutStatus");
+      const dates = form.getAll("checkoutDue");
+      recordCheckout(state, { id, store, customer, contactId, createdAt, discount: amount(form, "discount"),
+        sellerId: value(form, "sellerId", 36, false),
+        items: products.map((productId, index) => ({ productId: String(productId), quantity: Number(quantities[index]),
+          origin: String(origins[index] ?? ""), gift: kinds[index] === "gift" })),
+        payments: methods.flatMap((method, index) => {
+          const matched = paymentMethods.find((item) => item === method);
+          const paid = parseReais(String(amounts[index] ?? ""));
+          if (!matched || paid === null) throw new RetailError("Confira os pagamentos da venda.");
+          if (methods.length === 1 && paid === 0) return [];
+          return [{ method: matched, amount: paid, rateId: String(rates[index] ?? ""),
+            received: statuses[index] === "received", due: String(dates[index] ?? "") }];
+        }),
+      });
+      return;
     }
     recordSale(state, {
       id, store, productId: value(form, "productId"), customer, contactId,

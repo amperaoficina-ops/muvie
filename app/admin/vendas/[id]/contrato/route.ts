@@ -30,9 +30,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     ["Data da venda", businessDate(new Date(sale.createdAt)).split("-").reverse().join("/")],
     ["Unidade", storeName(sale.store, state)],
     ["Comprador", sale.customer],
-    ["Produto", `${sale.quantity} × ${sale.productName} (${sale.sku})`],
+    ["Produtos", (sale.lines ?? [sale]).map((line) => `${line.quantity} × ${line.productName} (${line.sku})` +
+      ("gift" in line && line.gift ? " · brinde" : "") + " · " + money("gift" in line ? line.total : sale.total)).join("\n")],
     ["Total", money(sale.total)],
-    ["Forma de pagamento registrada", sale.method],
+    ["Pagamento registrado", sale.payments?.length ? sale.payments.map((item) => item.method + " · " + money(item.amount)).join("\n") : sale.method],
   ];
   for (const [label, value] of rows) {
     doc.font("Helvetica-Bold").text(label);

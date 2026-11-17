@@ -15,7 +15,7 @@ export type Asset = { id: string; name: string; store: StoreId; quantity: number
 export type LedgerEntry = {
   id: string; store: StoreId; name: string; direction: "in" | "out";
   kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste";
-  amount: number; date: string; due: string; saleId?: string; canceled?: boolean; manual?: boolean;
+  amount: number; date: string; due: string; saleId?: string; cardFee?: number; canceled?: boolean; manual?: boolean;
   settlements: { id: string; amount: number; date: string; reversedOn?: string }[];
 };
 export type StockLot = { purchaseId: string; productId: string; store: StoreId; quantity: number; unitCost: number; consigned: boolean; supplier: string; date: string };
@@ -45,10 +45,13 @@ export type Purchase = {
   acquisition?: Acquisition;
   specs?: ScooterSpecs;
 };
+export type SaleLine = { productId: string; productName: string; sku: string; quantity: number; unitPrice: number; total: number; cost: number; missingCostUnits: number; gift: boolean };
+export type SalePayment = { method: typeof paymentMethods[number]; amount: number; fee: number; rate?: CardRate; due: string; received: boolean };
 export type Sale = {
   id: string; store: StoreId; productId: string; productName: string; sku: string;
   customer: string; contactId: string; quantity: number; unitPrice: number;
   discount: number; total: number; method: typeof paymentMethods[number];
+  lines?: SaleLine[]; payments?: SalePayment[]; cardFees?: number;
   createdAt: string; canceledAt?: string; fiscalNotes?: string;
   sellerId?: string; sellerName?: string; commission?: number; cost?: number; missingCostUnits?: number; allocations?: StockLot[]; origin?: string;
 };
@@ -153,7 +156,7 @@ export function postMonthlyCosts(state: RetailState, store: StoreId, month: stri
 
 export function financialReport(state: RetailState, from: string, to: string, store?: StoreId) {
   const includes = (date: string) => date >= from && date <= to;
-  const rows = { revenue: 0, cost: 0, commissions: 0, fixed: 0, salary: 0, expenses: 0, other: 0, incoming: 0, outgoing: 0,
+  const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, fixed: 0, salary: 0, expenses: 0, other: 0, incoming: 0, outgoing: 0,
     payable: 0, receivable: 0, overdue: 0, missingSales: 0 };
   for (const sale of state.sales) {
     if (store && sale.store !== store) continue;
@@ -163,6 +166,7 @@ export function financialReport(state: RetailState, from: string, to: string, st
     if (!sign) continue;
     rows.revenue += sign * sale.total;
     rows.cost += sign * (sale.cost ?? 0);
+    rows.cardFees += sign * (sale.cardFees ?? 0);
     rows.commissions += sign * (sale.commission ?? 0);
     if (sale.cost == null || sale.missingCostUnits) rows.missingSales++;
   }
@@ -181,12 +185,19 @@ export function financialReport(state: RetailState, from: string, to: string, st
       if (entry.kind === "despesa") rows.expenses += entry.amount;
       if (entry.kind === "outra-receita") rows.other += entry.amount;
     }
-    for (const payment of entry.settlements) {
-      if (includes(payment.date)) rows[entry.direction === "in" ? "incoming" : "outgoing"] += payment.amount;
-      if (payment.reversedOn && includes(payment.reversedOn)) rows[entry.direction === "in" ? "outgoing" : "incoming"] += payment.amount;
+    const events = entry.settlements.flatMap((payment) => [
+      { date: payment.date, amount: payment.amount },
+      ...(payment.reversedOn ? [{ date: payment.reversedOn, amount: -payment.amount }] : []),
+    ]).sort((a, b) => a.date.localeCompare(b.date));
+    let gross = 0;
+    const net = (value: number) => value - (entry.cardFee ? Math.round(value * entry.cardFee / entry.amount) : 0);
+    for (const event of events) {
+      const delta = net(gross + event.amount) - net(gross);
+      gross += event.amount;
+      if (includes(event.date)) rows[(entry.direction === "in") === (delta >= 0) ? "incoming" : "outgoing"] += Math.abs(delta);
     }
   }
-  return { ...rows, result: rows.revenue + rows.other - rows.cost - rows.commissions - rows.fixed - rows.salary - rows.expenses,
+  return { ...rows, result: rows.revenue + rows.other - rows.cost - rows.commissions - rows.cardFees - rows.fixed - rows.salary - rows.expenses,
     cash: rows.incoming - rows.outgoing };
 }
 
@@ -196,17 +207,50 @@ export function salesRanking(state: RetailState, from: string, to: string, store
     if (sale.canceledAt || (store && sale.store !== store)) continue;
     const day = businessDate(new Date(sale.createdAt));
     if (day < from || day > to) continue;
-    const key = sellers ? sale.sellerId : sale.productId;
-    if (!key) continue;
-    const product = sellers ? null : state.products.find((item) => item.id === key);
-    if (!sellers && product?.category !== "Scooter elétrica") continue;
-    const row = groups.get(key) ?? { label: sellers ? sale.sellerName ?? "Vendedor" : product?.name ?? sale.productName, units: 0, amount: 0 };
-    row.units += sale.quantity;
-    row.amount += sale.total;
-    groups.set(key, row);
+    const lines = sellers
+      ? [{ productId: sale.sellerId, productName: sale.sellerName ?? "Vendedor", quantity: (sale.lines ?? [sale]).reduce((sum, line) => sum + ("gift" in line && line.gift ? 0 : line.quantity), 0), total: sale.total }]
+      : (sale.lines ?? [sale]).filter((line) => !("gift" in line && line.gift));
+    for (const line of lines) {
+      const key = line.productId;
+      if (!key) continue;
+      const product = sellers ? null : state.products.find((item) => item.id === key);
+      if (!sellers && product?.category !== "Scooter elétrica" && product?.category !== "Bicicleta elétrica") continue;
+      const row = groups.get(key) ?? { label: line.productName, units: 0, amount: 0 };
+      row.units += line.quantity;
+      row.amount += line.total;
+      groups.set(key, row);
+    }
   }
   return [...groups.values()].sort((a, b) => b.units - a.units || b.amount - a.amount);
 }
+export function modelMarginRanking(state: RetailState, from: string, to: string, store?: StoreId) {
+  const margins = new Map<string, { label: string; margin: number }>();
+  for (const sale of state.sales) {
+    const date = businessDate(new Date(sale.createdAt));
+    if (sale.canceledAt || sale.cost == null || sale.missingCostUnits || date < from || date > to || (store && sale.store !== store)) continue;
+    const lines = sale.lines ?? [{ ...sale, cost: sale.cost, gift: false }];
+    const giftCost = lines.reduce((sum, line) => sum + (line.gift ? line.cost : 0), 0);
+    const sharedCost = giftCost + (sale.cardFees ?? 0) + (sale.commission ?? 0);
+    let revenue = 0;
+    let allocated = 0;
+    let first = true;
+    for (const line of lines) {
+      if (line.gift) continue;
+      revenue += line.total;
+      const cumulative = sale.total ? Math.round(revenue / sale.total * sharedCost) : sharedCost;
+      const share = sale.total || first ? cumulative - allocated : 0;
+      first = false;
+      allocated = cumulative;
+      const product = state.products.find((item) => item.id === line.productId);
+      if (product?.category !== "Scooter elétrica" && product?.category !== "Bicicleta elétrica") continue;
+      const row = margins.get(line.productId) ?? { label: line.productName, margin: 0 };
+      row.margin += line.total - line.cost - share;
+      margins.set(line.productId, row);
+    }
+  }
+  return [...margins.values()].sort((a, b) => b.margin - a.margin);
+}
+
 function addLot(state: RetailState, lot: StockLot) {
   const current = state.stockLots.find((item) => item.purchaseId === lot.purchaseId && item.store === lot.store);
   if (current) current.quantity += lot.quantity;
@@ -306,11 +350,11 @@ export function recordPurchase(state: RetailState, input: PurchaseInput) {
   }
 }
 
-export function recordSale(state: RetailState, input: SaleInput) {
+export function recordSale(state: RetailState, input: SaleInput, gift = false) {
   if (state.sales.some((sale) => sale.id === input.id)) return;
   const product = productById(state, input.productId);
   const gross = product.price * input.quantity;
-  if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0 || !Number.isSafeInteger(gross) || gross <= 0) {
+  if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0 || !Number.isSafeInteger(gross) || (gift ? gross < 0 : gross <= 0)) {
     throw new RetailError("Confira a quantidade e o preço cadastrado no produto.");
   }
   if (!Number.isSafeInteger(input.discount) || input.discount < 0 || input.discount > gross) {
@@ -362,6 +406,78 @@ export function recordSale(state: RetailState, input: SaleInput) {
   if (contact) contact.stage = "Ganho";
 }
 
+export type CheckoutItem = { productId: string; quantity: number; origin: string; gift: boolean };
+export type CheckoutPayment = { method: SalePayment["method"]; amount: number; received: boolean; due: string; rateId?: string };
+export type CheckoutInput = Omit<SaleInput, "productId" | "quantity" | "method" | "origin" | "receive"> & {
+  items: CheckoutItem[]; payments: CheckoutPayment[];
+};
+
+export function recordCheckout(state: RetailState, input: CheckoutInput) {
+  if (state.sales.some((sale) => sale.id === input.id)) return;
+  if (!input.items.length || !input.items.some((item) => !item.gift) || input.items.length > 20 || input.payments.length > 12) {
+    throw new RetailError("Adicione ao menos um item de venda e confira os limites do formulário.");
+  }
+  const draft = structuredClone(state);
+  const date = businessDate(new Date(input.createdAt));
+  const gross = input.items.reduce((sum, item) => sum + (item.gift ? 0 : productById(draft, item.productId).price * item.quantity), 0);
+  if (!Number.isSafeInteger(gross) || !Number.isSafeInteger(input.discount) || input.discount < 0 || input.discount > gross) {
+    throw new RetailError("Confira o total dos itens e o desconto.");
+  }
+  const total = gross - input.discount;
+  const payments: SalePayment[] = input.payments.map((payment) => {
+    if (!Number.isSafeInteger(payment.amount) || payment.amount <= 0) throw new RetailError("Informe um valor positivo para cada pagamento.");
+    if (!payment.received && (!isCalendarDate(payment.due) || payment.due < date)) throw new RetailError("Informe o vencimento dos pagamentos a receber.");
+    const rate = payment.method === "Cartão" ? draft.cardRates.find((item) => item.id === payment.rateId) : undefined;
+    if (payment.method === "Cartão" && !rate) throw new RetailError("Selecione a taxa da maquininha para cada pagamento em cartão.");
+    return { method: payment.method, amount: payment.amount, fee: rate ? cardQuote(payment.amount, rate).fee : 0,
+      rate, received: payment.received, due: payment.received ? date : payment.due };
+  });
+  if (payments.reduce((sum, payment) => sum + payment.amount, 0) !== total) throw new RetailError("A soma dos pagamentos deve ser igual ao total da venda.");
+  let priced = 0;
+  let allocatedDiscount = 0;
+  const snapshots = input.items.map((item, index) => {
+    const product = productById(draft, item.productId);
+    const lineGross = product.price * item.quantity;
+    if (!item.gift) priced += lineGross;
+    const share = gross ? Math.round(priced / gross * input.discount) : 0;
+    const discount = item.gift ? lineGross : share - allocatedDiscount;
+    allocatedDiscount = share;
+    const id = input.id + "-item-" + index;
+    recordSale(draft, { id, store: input.store, customer: input.customer, contactId: input.contactId,
+      sellerId: input.sellerId, createdAt: input.createdAt, productId: item.productId, quantity: item.quantity,
+      origin: item.origin, discount, method: payments[0]?.method ?? "Pix" }, item.gift);
+    const sale = draft.sales.shift()!;
+    return { sale, gift: item.gift };
+  });
+  const first = snapshots.find((row) => !row.gift)!.sale;
+  const lines = snapshots.map(({ sale, gift }) => ({
+    productId: sale.productId, productName: sale.productName, sku: sale.sku, quantity: sale.quantity,
+    unitPrice: gift ? 0 : sale.unitPrice, total: sale.total, cost: sale.cost ?? 0, missingCostUnits: sale.missingCostUnits ?? 0, gift,
+  }));
+  const sum = (key: "cost" | "missingCostUnits" | "commission") => snapshots.reduce((value, row) => value + (row.sale[key] ?? 0), 0);
+  const seller = draft.staff.find((item) => item.id === input.sellerId);
+  const commission = seller ? Number((BigInt(total) * BigInt(seller.commissionBps) + BigInt(5000)) / BigInt(10000)) : 0;
+  const prefix = input.id + "-item-";
+  draft.ledger = draft.ledger.filter((entry) => !entry.saleId?.startsWith(prefix) || entry.kind !== "comissao");
+  for (const entry of draft.ledger) if (entry.saleId?.startsWith(prefix)) entry.saleId = input.id;
+  for (const movement of draft.movements) if (movement.reference?.startsWith(prefix)) movement.reference = input.id;
+  if (commission) draft.ledger.unshift({
+    id: input.id + "-commission", saleId: input.id, store: input.store, name: "Comissão · " + first.sellerName,
+    kind: "comissao", direction: "out", amount: commission, date, due: "", settlements: [],
+  });
+  for (const [index, payment] of payments.entries()) {
+    const id = input.id + "-payment-" + index;
+    draft.ledger.unshift({ id, saleId: input.id, store: input.store, kind: "venda", direction: "in",
+      name: "Venda · " + payment.method + (payment.fee ? " · taxa " + money(payment.fee) : ""),
+      amount: payment.amount, cardFee: payment.fee, date, due: payment.due,
+      settlements: payment.received ? [{ id: id + "-received", amount: payment.amount, date }] : [] });
+  }
+  draft.sales.unshift({ ...first, id: input.id, total, discount: input.discount, commission, lines, payments,
+    cardFees: payments.reduce((sum, payment) => sum + payment.fee, 0), cost: sum("cost"), missingCostUnits: sum("missingCostUnits"),
+    allocations: snapshots.flatMap(({ sale }) => sale.allocations ?? []) });
+  Object.assign(state, draft);
+}
+
 export function cancelSale(state: RetailState, id: string, date: string, refundConfirmed = false) {
   const sale = state.sales.find((item) => item.id === id);
   if (!sale) throw new RetailError("Venda não encontrada.");
@@ -372,7 +488,10 @@ export function cancelSale(state: RetailState, id: string, date: string, refundC
   }
   const received = linked.filter((entry) => entry.direction === "in").reduce((sum, entry) => sum + settledAmount(entry), 0);
   if (received && !refundConfirmed) throw new RetailError("Confirme a devolução do valor recebido antes de cancelar.");
-  changeStock(state, sale.productId, sale.store, sale.quantity, "Cancelamento de venda", sale.id + "-return", date, sale.id);
+  const lines = sale.lines ?? [sale];
+  for (const [index, line] of lines.entries()) {
+    changeStock(state, line.productId, sale.store, line.quantity, "Cancelamento de venda", sale.id + "-return-" + index, date, sale.id);
+  }
   for (const lot of sale.allocations ?? []) addLot(state, lot);
   for (const entry of linked) entry.canceled = true;
   if (received) {
