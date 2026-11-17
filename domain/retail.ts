@@ -96,6 +96,9 @@ export type Movement = {
   reason: string; createdAt: string; reference?: string;
 };
 export type RetailState = {
+  cashAccounts?: CashAccount[];
+  cashAssignments?: CashAssignment[];
+  cashReconciliations?: CashReconciliation[];
   suppliers: Supplier[];
   cardMachines: CardMachine[];
   units?: Store[];
@@ -266,6 +269,21 @@ export function saleNetProfit(sale: Sale) {
   return sale.total - sale.cost - (sale.cardFees ?? 0) - (sale.tax?.amount ?? 0) - (sale.commission ?? 0);
 }
 
+export function ledgerCashEvents(entry: LedgerEntry) {
+  if (entry.nonCash) return [];
+  const events = entry.settlements.flatMap((payment) => [
+    { settlementId: payment.id, reversal: false, date: payment.date, amount: payment.amount },
+    ...(payment.reversedOn ? [{ settlementId: payment.id, reversal: true, date: payment.reversedOn, amount: -payment.amount }] : []),
+  ]).sort((a, b) => a.date.localeCompare(b.date));
+  let gross = 0;
+  const net = (value: number) => value - (entry.cardFee && entry.amount ? Math.round(value * entry.cardFee / entry.amount) : 0);
+  return events.map((event) => {
+    const delta = net(gross + event.amount) - net(gross);
+    gross += event.amount;
+    return { ...event, amount: entry.direction === "in" ? delta : -delta };
+  });
+}
+
 export function financialReport(state: RetailState, from: string, to: string, store?: StoreId) {
   const includes = (date: string) => date >= from && date <= to;
   const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, taxes: 0, fixed: 0, salary: 0, expenses: 0, other: 0, distributions: 0, incoming: 0, outgoing: 0,
@@ -299,17 +317,8 @@ export function financialReport(state: RetailState, from: string, to: string, st
       if (entry.kind === "distribuicao-lucro") rows.distributions += entry.amount;
       if (entry.kind === "outra-receita") rows.other += entry.amount;
     }
-    if (entry.nonCash) continue;
-    const events = entry.settlements.flatMap((payment) => [
-      { date: payment.date, amount: payment.amount },
-      ...(payment.reversedOn ? [{ date: payment.reversedOn, amount: -payment.amount }] : []),
-    ]).sort((a, b) => a.date.localeCompare(b.date));
-    let gross = 0;
-    const net = (value: number) => value - (entry.cardFee ? Math.round(value * entry.cardFee / entry.amount) : 0);
-    for (const event of events) {
-      const delta = net(gross + event.amount) - net(gross);
-      gross += event.amount;
-      if (includes(event.date)) rows[(entry.direction === "in") === (delta >= 0) ? "incoming" : "outgoing"] += Math.abs(delta);
+    for (const event of ledgerCashEvents(entry)) {
+      if (includes(event.date)) rows[event.amount >= 0 ? "incoming" : "outgoing"] += Math.abs(event.amount);
     }
   }
   return { ...rows, result: rows.revenue + rows.other - rows.cost - rows.commissions - rows.cardFees - rows.taxes - rows.fixed - rows.salary - rows.expenses,
@@ -892,7 +901,7 @@ export function cancelSale(state: RetailState, id: string, date: string, refundC
   if (linked.some((entry) => entry.direction === "out" && settledAmount(entry))) {
     throw new RetailError("Há comissão ou repasse já pago. Regularize a baixa no Financeiro antes de cancelar.");
   }
-  const received = linked.filter((entry) => entry.direction === "in").reduce((sum, entry) => sum + settledAmount(entry), 0);
+  const received = linked.filter((entry) => entry.direction === "in" && !entry.nonCash).reduce((sum, entry) => sum + settledAmount(entry), 0);
   if (received && !refundConfirmed) throw new RetailError("Confirme a devolução do valor recebido antes de cancelar.");
   const lines = sale.lines ?? [sale];
   for (const [index, line] of lines.entries()) {
@@ -909,4 +918,46 @@ export function cancelSale(state: RetailState, id: string, date: string, refundC
       direction: "out", amount: received, date: day, due: day, settlements: [{ id: id + "-refunded", amount: received, date: day }] });
   }
   sale.canceledAt = date;
+}
+
+export type CashAccount = {
+  id: string; store: StoreId; name: string; kind: "Banco" | "Dinheiro";
+  openingDate: string; openingBalance: number; defaultAccount: boolean; reviewDays: number; paymentMethod?: Exclude<SalePayment["method"], "Produto">;
+};
+export type CashAssignment = { entryId: string; settlementId: string; accountId: string };
+export type CashReconciliation = {
+  id: string; accountId: string; date: string; statementBalance: number; systemBalance: number;
+  notes: string; actor: string;
+};
+
+export function cashMovements(state: RetailState) {
+  const accounts = new Map((state.cashAccounts ?? []).map((account) => [account.id, account]));
+  const defaults = new Map([...accounts.values()].filter((account) => account.defaultAccount).map((account) => [account.store, account]));
+  const assignments = new Map((state.cashAssignments ?? []).map((item) => [JSON.stringify([item.entryId, item.settlementId]), item.accountId]));
+  const sales = new Map(state.sales.map((sale) => [sale.id, sale]));
+  const routes = new Map([...accounts.values()].filter((account) => account.paymentMethod)
+    .map((account) => [JSON.stringify([account.store, account.paymentMethod]), account]));
+  return state.ledger.flatMap((entry) => {
+    const sale = entry.kind === "venda" && entry.saleId ? sales.get(entry.saleId) : undefined;
+    const prefix = sale ? sale.id + "-payment-" : "";
+    const method = sale && entry.id.startsWith(prefix)
+      ? sale.payments?.[Number(entry.id.slice(prefix.length))]?.method : sale?.method;
+    const route = routes.get(JSON.stringify([entry.store, method]));
+    const dates = new Map(entry.settlements.map((payment) => [payment.id, payment.date]));
+    return ledgerCashEvents(entry).filter((event) => event.amount !== 0).map((event) => {
+      const key = JSON.stringify([entry.id, event.settlementId]);
+      const assigned = assignments.get(key);
+      const postedDate = dates.get(event.settlementId);
+      const automatic = route && postedDate && postedDate >= route.openingDate ? route : defaults.get(entry.store);
+      const account = assigned ? accounts.get(assigned) : automatic;
+      const accountId = account && account.store === entry.store && postedDate && postedDate >= account.openingDate ? account.id : undefined;
+      return { ...event, key, entryId: entry.id, store: entry.store, name: entry.name, accountId, postedDate };
+    });
+  });
+}
+
+export function cashBalance(account: CashAccount, movements: ReturnType<typeof cashMovements>, date: string) {
+  if (date < account.openingDate) return 0;
+  return account.openingBalance + movements.reduce((sum, movement) =>
+    movement.accountId === account.id && movement.date <= date ? sum + movement.amount : sum, 0);
 }

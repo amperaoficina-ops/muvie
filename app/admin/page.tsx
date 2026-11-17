@@ -1,3 +1,4 @@
+import { Cash } from "./cash";
 import { LotColorFields } from "./product-color-fields";
 import { ModelCard } from "../catalog";
 import { SupplierField } from "./supplier-field";
@@ -47,6 +48,7 @@ const nav = [
   { id: "funcionarios", label: "Funcionários", icon: "users", description: "Acompanhe equipe, remuneração, vendas do mês e vales por unidade." },
   { id: "compromissos", label: "Compromissos", icon: "bag", description: "Cadastre contas a pagar e a receber e acompanhe os compromissos em aberto." },
   { id: "distribuicoes", label: "Distribuição de lucro", icon: "bag", description: "Registre o valor distribuído, o beneficiário e a unidade de origem." },
+  { id: "caixa", label: "Caixa", icon: "grid", description: "Acompanhe saldos, extratos e conciliações de cada unidade.", admin: true },
   { id: "financeiro", label: "Financeiro", icon: "grid", description: "Acompanhe DRE, caixa, contas a pagar e a receber por unidade.", admin: true },
   { id: "lojas", label: "Todas as lojas", icon: "pin", description: "Cadastre unidades e configure equipe, custos fixos e estrutura.", admin: true },
   { id: "crm", label: "Clientes / CRM", icon: "users", description: "Consulte fichas, histórico de compras e vendas, documentos e retornos por unidade." },
@@ -62,7 +64,7 @@ const nav = [
 type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
-  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "distribuicoes", "compromissos", "taxas", "impostos", "usuarios", "logs"] },
+  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "caixa", "distribuicoes", "compromissos", "taxas", "impostos", "usuarios", "logs"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
 const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
@@ -966,7 +968,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; catalogoPagina?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; catalogoPagina?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string; conta?: string; caixaPagina?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -989,7 +991,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     ...(paidFrom ? { baixaInicio: paidFrom } : {}),
     ...(paidTo ? { baixaFim: paidTo } : {}),
   }) : "";
-  const periodQuery = active.id === "financeiro" || active.id === "visao" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to }) : "";
+  const periodQuery = active.id === "financeiro" || active.id === "visao" || active.id === "caixa" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to }) : "";
   const showInvoices = ["compras", "vendas", "crm", "bens"].includes(active.id) || (active.id === "visao" && (showSales || showPurchases));
   const [state, invoices, users] = await Promise.all([
     denied ? null : readRetail().catch(() => null),
@@ -1094,6 +1096,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} invoices={invoices ?? []} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
+          {active.id === "caixa" && <Cash state={state} filter={filter} period={period} selected={params.conta} page={params.caixaPagina} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "compromissos" && <Commitments view={commitmentView} paidFrom={paidFrom} paidTo={paidTo} requestedPage={params.compromissosPagina} kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}

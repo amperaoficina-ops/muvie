@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
+  cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -66,6 +66,10 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
   const params = new URLSearchParams({ tab });
   const category = form.get("stockCategory");
   if (tab === "estoque" && productCategories.some((item) => item === category)) params.set("categoria", String(category));
+  if (tab === "caixa") {
+    const account = form.get("conta");
+    if (typeof account === "string" && (uuidPattern.test(account) || account === "sem-conta")) params.set("conta", account);
+  }
   if (tab === "catalogo") {
     const page = form.get("catalogoPagina");
     if (typeof page === "string" && /^\d{1,8}$/.test(page)) params.set("catalogoPagina", page);
@@ -738,5 +742,81 @@ export async function saveSaleCosts(form: FormData) {
         cardFees: form.getAll("cardFee").map(readAmount),
       });
     });
+  });
+}
+
+function signedCashAmount(form: FormData, key: string) {
+  const raw = value(form, key, 32);
+  const negative = raw.startsWith("-");
+  const cents = parseReais(negative ? raw.slice(1) : raw);
+  if (cents === null) throw new RetailError("Informe um saldo válido em reais.");
+  return negative ? -cents : cents;
+}
+
+export async function saveCashAccount(form: FormData) {
+  const id = randomUUID();
+  await commit(form, "caixa", "Conta cadastrada.", (state) => {
+    const store = choice(form, "store", storeIds(state));
+    const openingDate = requiredDate(form, "openingDate");
+    const name = value(form, "name", 80);
+    const kind = choice(form, "kind", ["Banco", "Dinheiro"]);
+    const method = form.get("paymentMethod") ? choice(form, "paymentMethod", ["Pix", "Cartão", "Dinheiro", "Financiamento"]) : undefined;
+    const accounts = state.cashAccounts ??= [];
+    if (accounts.some((account) => account.store === store && account.name.toLowerCase() === name.toLowerCase())) {
+      throw new RetailError("Já existe uma conta com esse nome nesta unidade.");
+    }
+    if (method && accounts.some((account) => account.store === store && account.paymentMethod === method)) {
+      throw new RetailError("Esta forma de pagamento já tem uma conta automática nesta unidade.");
+    }
+    const reviewDays = Number(value(form, "reviewDays", 3));
+    if (!Number.isInteger(reviewDays) || reviewDays < 1 || reviewDays > 365) throw new RetailError("Informe um intervalo de conferência entre 1 e 365 dias.");
+    accounts.push({ id, store, name, kind, openingDate, paymentMethod: method, reviewDays, openingBalance: signedCashAmount(form, "openingBalance"),
+      defaultAccount: !accounts.some((account) => account.store === store) });
+  });
+}
+
+export async function assignCashMovement(form: FormData) {
+  await commit(form, "caixa", "Conta do movimento atualizada.", (state) => {
+    const entryId = value(form, "entryId", 180);
+    const settlementId = value(form, "settlementId", 180);
+    const accountId = value(form, "accountId", 36);
+    const entry = state.ledger.find((row) => row.id === entryId);
+    const payment = entry?.settlements.find((row) => row.id === settlementId);
+    const account = state.cashAccounts?.find((row) => row.id === accountId);
+    if (!entry || entry.nonCash || !payment || !account || account.store !== entry.store || payment.date < account.openingDate) {
+      throw new RetailError("Selecione uma conta da mesma unidade, aberta na data da baixa.");
+    }
+    state.cashAssignments = (state.cashAssignments ?? []).filter((row) => row.entryId !== entryId || row.settlementId !== settlementId);
+    state.cashAssignments.push({ entryId, settlementId, accountId });
+  });
+}
+
+export async function reconcileCashAccount(form: FormData) {
+  const id = randomUUID();
+  await runAction(form, "caixa", "Conferência de extrato registrada.", (user) => editWithAudit(user, "Confere extrato de Caixa", (state) => {
+    const accountId = value(form, "accountId", 36);
+    const account = state.cashAccounts?.find((row) => row.id === accountId);
+    const date = requiredDate(form, "date");
+    if (!account || date < account.openingDate) throw new RetailError("Selecione uma conta aberta na data da conferência.");
+    const statementBalance = signedCashAmount(form, "statementBalance");
+    const systemBalance = cashBalance(account, cashMovements(state), date);
+    (state.cashReconciliations ??= []).unshift({ id, accountId, date, statementBalance, systemBalance,
+      notes: value(form, "notes", 500, false), actor: user.email });
+  }));
+}
+
+export async function recordCashAdjustment(form: FormData) {
+  const id = randomUUID();
+  await commit(form, "caixa", "Movimento avulso registrado.", (state) => {
+    const account = state.cashAccounts?.find((row) => row.id === value(form, "accountId", 36));
+    const date = requiredDate(form, "date");
+    if (!account || date < account.openingDate) throw new RetailError("Selecione uma conta aberta na data do movimento.");
+    const direction = choice(form, "direction", ["in", "out"]);
+    const total = amount(form, "amount");
+    if (total <= 0) throw new RetailError("Informe um valor maior que zero.");
+    const settlementId = id + "-paid";
+    state.ledger.unshift({ id, store: account.store, kind: "ajuste", direction, name: value(form, "name", 120),
+      amount: total, date, due: date, settlements: [{ id: settlementId, amount: total, date }] });
+    (state.cashAssignments ??= []).push({ entryId: id, settlementId, accountId: account.id });
   });
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  balanceDue, cancelSale, emptyRetailState, financialReport, postMonthlyCosts, recordPurchase,
+  cashBalance, cashMovements, balanceDue, cancelSale, emptyRetailState, financialReport, postMonthlyCosts, recordPurchase,
   recordSale, reverseSettlement, salesRanking, settleEntry, transferStock,
 } from "../domain/retail.ts";
 
@@ -90,4 +90,45 @@ test("cancelamento de venda recebida exige devolução e mantém histórico de c
   assert.equal(financialReport(state, date, date).incoming, 490000);
   assert.equal(financialReport(state, "2026-11-08", "2026-11-08").outgoing, 490000);
   assert.equal(financialReport(state, date, "2026-11-08").revenue, 0);
+});
+
+test("caixa usa baixas líquidas, exclui trocas e estorna na conta da baixa", () => {
+  const state = fixture();
+  state.cashAccounts = [
+    { id: "bank", store, name: "Itaú", kind: "Banco", defaultAccount: true, openingDate: date, openingBalance: 5000 },
+    { id: "cash", store, name: "Gaveta", kind: "Dinheiro", defaultAccount: false, openingDate: date, openingBalance: 0 },
+  ];
+  state.ledger.push(
+    { id: "card", store, name: "Cartão", kind: "venda", direction: "in", amount: 10000, cardFee: 333, date, due: date,
+      settlements: [{ id: "a", amount: 4000, date, reversedOn: "2026-11-08" }, { id: "b", amount: 6000, date }] },
+    { id: "trade", store, name: "Troca", kind: "venda", direction: "in", amount: 3000, nonCash: true, date, due: date,
+      settlements: [{ id: "c", amount: 3000, date }] },
+    { id: "open", store, name: "A pagar", kind: "estoque", direction: "out", amount: 2000, date, due: date, settlements: [] },
+  );
+  state.cashAssignments = [{ entryId: "card", settlementId: "a", accountId: "cash" }];
+  const rows = cashMovements(state);
+  assert.equal(rows.length, 3);
+  assert.equal(cashBalance(state.cashAccounts[0], rows, date), 5000 + 5800);
+  assert.equal(cashBalance(state.cashAccounts[1], rows, date), 3867);
+  assert.equal(cashBalance(state.cashAccounts[1], rows, "2026-11-08"), 0);
+  assert.equal(rows.reduce((sum, row) => sum + row.amount, 0), financialReport(state, date, "2026-11-08", store).cash);
+});
+
+test("caixa separa unidades, respeita abertura e direciona recebimento por forma de pagamento", () => {
+  const state = fixture();
+  state.cashAccounts = [
+    { id: "bank", store, defaultAccount: true, openingDate: date, openingBalance: 100 },
+    { id: "drawer", store, paymentMethod: "Dinheiro", openingDate: "2026-11-08", openingBalance: 200 },
+  ];
+  state.sales.push({ id: "sale", method: "Dinheiro" });
+  state.ledger.push(
+    { id: "sale-receipt", saleId: "sale", store, kind: "venda", direction: "in", amount: 1000,
+      settlements: [{ id: "old", amount: 100, date: "2026-11-06" }, { id: "a", amount: 400, date },
+        { id: "b", amount: 500, date: "2026-11-08" }] },
+    { id: "other", store: "sao-jose", direction: "out", amount: 20, settlements: [{ id: "x", amount: 20, date }] },
+  );
+  const rows = cashMovements(state);
+  assert.deepEqual(rows.map((row) => row.accountId), [undefined, "bank", "drawer", undefined]);
+  assert.equal(cashBalance(state.cashAccounts[1], rows, date), 0);
+  assert.equal(cashBalance(state.cashAccounts[1], rows, "2026-11-08"), 700);
 });
