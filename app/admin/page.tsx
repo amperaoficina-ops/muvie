@@ -30,7 +30,7 @@ import { Submit } from "./submit";
 import { CardSettings, Charts, TestimonialsSettings, UsersPanel } from "./operations";
 import { RecordSearch } from "./record-search";
 import { Simulator } from "./simulator";
-import { Finance, Rankings, reportPeriod, StoresPanel } from "./finance";
+import { Commitments, Finance, Rankings, reportPeriod, StoresPanel } from "./finance";
 import { isPrimaryAdmin, canAccess } from "@/domain/access";
 
 const nav = [
@@ -42,6 +42,7 @@ const nav = [
   { id: "bens", label: "Bens", icon: "box", description: "Acompanhe os bens da empresa e os produtos recebidos em troca por unidade." },
   { id: "fornecedores", label: "Fornecedores", icon: "users", description: "Cadastre os fornecedores usados nas compras." },
   { id: "funcionarios", label: "Funcionários", icon: "users", description: "Acompanhe equipe, remuneração, vendas do mês e vales por unidade." },
+  { id: "compromissos", label: "Compromissos", icon: "bag", description: "Cadastre contas a pagar e a receber e acompanhe os compromissos em aberto." },
   { id: "financeiro", label: "Financeiro", icon: "grid", description: "Acompanhe DRE, caixa, contas a pagar e a receber por unidade.", admin: true },
   { id: "lojas", label: "Todas as lojas", icon: "pin", description: "Cadastre unidades e configure equipe, custos fixos e estrutura.", admin: true },
   { id: "crm", label: "Clientes / CRM", icon: "users", description: "Consulte fichas, histórico de compras e vendas, documentos e retornos por unidade." },
@@ -57,7 +58,7 @@ const nav = [
 type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
-  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "taxas", "impostos", "usuarios", "logs"] },
+  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "compromissos", "taxas", "impostos", "usuarios", "logs"] },
   { title: "Lojas", tabs: ["lojas"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
@@ -70,7 +71,7 @@ const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
   compras: { label: "Registrar compra", target: "registrar-compra" },
   vendas: { label: "Nova venda", target: "nova-venda" },
   crm: { label: "Novo cliente", target: "novo-cliente" },
-  financeiro: { label: "Novo compromisso", target: "novo-compromisso" },
+  compromissos: { label: "Novo compromisso", target: "novo-compromisso" },
 };
 type Filter = StoreId | "";
 
@@ -871,7 +872,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
-          {!denied && state && primary && !actionBesideUnits && active.id !== "produtos" && active.id !== "taxas" && active.id !== "financeiro" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
+          {!denied && state && primary && !actionBesideUnits && active.id !== "produtos" && active.id !== "taxas" && active.id !== "compromissos" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
           {!denied && state && (active.id === "produtos" || active.id === "taxas") && primary && <div className="admin-filter-bar">
             <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
           </div>}
@@ -882,7 +883,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery}>Todas</Link>
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
-          {!denied && state && active.id === "financeiro" && primary && <div className="admin-filter-bar">
+          {!denied && state && active.id === "compromissos" && primary && <div className="admin-filter-bar">
             <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
           </div>}
         </div>
@@ -915,7 +916,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
-          {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} createError={params.ficha ? params.erro : undefined} />}
+          {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
+          {active.id === "compromissos" && <Commitments state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} machines={state.cardMachines} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
             lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}

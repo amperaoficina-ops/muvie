@@ -195,11 +195,8 @@ export function StoreItemForm({ kind, store, item, staffPage = false, units = []
   </form>;
 }
 
-export function Finance({ state, filter, period, createError }: { state: RetailState; filter: Filter; period: Period; createError?: string }) {
+export function Finance({ state, filter, period }: { state: RetailState; filter: Filter; period: Period }) {
   const report = financialReport(state, period.from, period.to, filter || undefined);
-  const entries = state.ledger.filter((item) => !filter || item.store === filter);
-  const open = entries.filter((item) => balanceDue(item) > 0).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
-  const entryId = randomUUID();
   const rows: [string, number][] = [
     ["Receita líquida de descontos", report.revenue], ["Outras receitas", report.other], ["Custo das motos e produtos vendidos", -report.cost],
     ["Impostos sobre vendas", -report.taxes], ["Taxas de cartão", -report.cardFees], ["Comissões", -report.commissions], ["Salários lançados", -report.salary], ["Fixos lançados", -report.fixed], ["Outras despesas", -report.expenses],
@@ -219,10 +216,17 @@ export function Finance({ state, filter, period, createError }: { state: RetailS
         <p className="admin-empty">As contas em aberto mostram todos os vencimentos. O período filtra o DRE, as baixas e os estornos.</p>
       </section>
     </div>
+  </>;
+}
+
+export function Commitments({ state, filter, createError }: { state: RetailState; filter: Filter; createError?: string }) {
+  const entries = state.ledger.filter((item) => !filter || item.store === filter);
+  const open = entries.filter((item) => balanceDue(item) > 0).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+  const entryId = randomUUID();
+  return <>
     <CreateDialog id="novo-compromisso" title="Novo compromisso" reopen={Boolean(createError)}>
       {createError && <p className="feedback error" role="alert">{createError}</p>}
       <form className="admin-form" action={saveLedgerEntry}><HiddenFilter filter={filter} /><input type="hidden" name="entryId" value={entryId} /><input type="hidden" name="focus" value={entryId} />
-        <input type="hidden" name="inicio" value={period.from} /><input type="hidden" name="fim" value={period.to} />
         <label>Descrição<input name="name" maxLength={120} required placeholder="Ex.: internet, impostos ou serviço prestado" /></label>
         <label>Unidade<select name="store" defaultValue={filter} required><option value="">Selecione</option>{storeList(state).map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
         <label>Tipo<SearchSelect name="direction"><option value="out">A pagar · despesa</option><option value="in">A receber · outra receita</option></SearchSelect></label>
@@ -233,35 +237,35 @@ export function Finance({ state, filter, period, createError }: { state: RetailS
         <div className="span-two"><Submit>Lançar compromisso</Submit></div>
       </form>
     </CreateDialog>
-    <LedgerList state={state} title="Compromissos em aberto" entries={open} filter={filter} period={period} />
+    <LedgerList state={state} title="Compromissos em aberto" entries={open} filter={filter} />
   </>;
 }
 
-function LedgerList({ title, entries, filter, period, state }: { state: RetailState; title: string; entries: LedgerEntry[]; filter: Filter; period: Period }) {
+function LedgerList({ title, entries, filter, state }: { state: RetailState; title: string; entries: LedgerEntry[]; filter: Filter }) {
   return <section className="panel"><div className="panel-title"><h2>{title}</h2></div>
     <div className="editable-list">{entries.length ? entries.map((entry) => <details name={title} key={entry.id}>
       <summary><span><strong>{entry.name}</strong><small>{storeName(entry.store, state)} · {labels[entry.kind]} · vence {shortDate(entry.due)}</small></span>
         <span className="pill">{entry.canceled ? "Cancelado" : balanceDue(entry) ? (entry.direction === "in" ? "A receber" : "A pagar") : "Baixado"}</span>
         <strong>{money(balanceDue(entry) || entry.amount)}</strong></summary>
       {!entry.canceled && balanceDue(entry) > 0 && <>
-        <LedgerForm entry={entry} filter={filter} period={period} mode="pay" />
-        <LedgerForm entry={entry} filter={filter} period={period} mode="schedule" />
+        <LedgerForm entry={entry} filter={filter} mode="pay" />
+        <LedgerForm entry={entry} filter={filter} mode="schedule" />
       </>}
       {entry.settlements.map((payment) => <div className="record-actions" key={payment.id}>
         <p>Baixa de {money(payment.amount)} em {shortDate(payment.date)}{payment.reversedOn ? " · Estornada em " + shortDate(payment.reversedOn) : ""}</p>
         {!entry.canceled && (entry.kind !== "ajuste" || entry.manual) && !payment.reversedOn && <details name={"settlements-" + entry.id}><summary>Registrar estorno da baixa</summary>
-          <LedgerForm entry={entry} filter={filter} period={period} mode="reverse" settlementId={payment.id} />
+          <LedgerForm entry={entry} filter={filter} mode="reverse" settlementId={payment.id} />
         </details>}
       </div>)}
       {!entry.canceled && entry.manual && entry.settlements.every((payment) => payment.reversedOn) &&
-        <details className="record-actions"><summary>Cancelar compromisso manual</summary><LedgerForm entry={entry} filter={filter} period={period} mode="cancel" /></details>}
+        <details className="record-actions"><summary>Cancelar compromisso manual</summary><LedgerForm entry={entry} filter={filter} mode="cancel" /></details>}
     </details>) : <p className="admin-empty">Nenhum compromisso nesta lista.</p>}</div>
   </section>;
 }
 
-function LedgerForm({ entry, filter, period, mode, settlementId }: { entry: LedgerEntry; filter: Filter; period: Period; mode: string; settlementId?: string }) {
+function LedgerForm({ entry, filter, mode, settlementId }: { entry: LedgerEntry; filter: Filter; mode: string; settlementId?: string }) {
   return <form className="admin-form" action={updateLedger}>
-    <HiddenFilter filter={filter} /><input type="hidden" name="inicio" value={period.from} /><input type="hidden" name="fim" value={period.to} />
+    <HiddenFilter filter={filter} />
     <input type="hidden" name="id" value={entry.id} /><input type="hidden" name="mode" value={mode} />
     {mode === "pay" && <><input type="hidden" name="paymentId" value={randomUUID()} /><Currency name="amount" label="Valor desta baixa (R$)" value={balanceDue(entry)} required /></>}
     {settlementId && <input type="hidden" name="settlementId" value={settlementId} />}

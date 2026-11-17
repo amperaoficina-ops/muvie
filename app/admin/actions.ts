@@ -457,7 +457,7 @@ export async function launchMonth(form: FormData) {
 }
 
 export async function saveLedgerEntry(form: FormData) {
-  await commit(form, "financeiro", "Compromisso lançado.", (state) => {
+  await commit(form, "compromissos", "Compromisso lançado.", (state) => {
     const id = value(form, "entryId", 36);
     if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário.");
     if (state.ledger.some((item) => item.id === id)) return;
@@ -475,7 +475,7 @@ export async function saveLedgerEntry(form: FormData) {
 
 export async function updateLedger(form: FormData) {
   const paymentId = randomUUID();
-  await commit(form, "financeiro", "Financeiro atualizado.", (state) => {
+  await commit(form, "compromissos", "Compromisso atualizado.", (state) => {
     const id = value(form, "id");
     const entry = state.ledger.find((item) => item.id === id && !item.canceled);
     if (!entry) throw new RetailError("Compromisso indisponível.");
