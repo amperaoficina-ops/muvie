@@ -37,7 +37,7 @@ import { OverviewAnalytics } from "./overview-analytics";
 import { CardSettings, TestimonialsSettings, UsersPanel } from "./operations";
 import { RecordSearch } from "./record-search";
 import { Simulator } from "./simulator";
-import { Commitments, Finance, Rankings, reportPeriod, StoresPanel } from "./finance";
+import { Commitments, Finance, OverviewFinance, Rankings, reportPeriod, StoresPanel } from "./finance";
 import { isDirector, isPrimaryAdmin, canAccess, overviewAccess } from "@/domain/access";
 
 const nav = [
@@ -1086,7 +1086,10 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
                 return <Link href={adminUrl(id, filter) + target} key={id}><strong>{label}</strong><small>{description}</small><Icon name="arrow" size={16} /></Link>;
               })}</div>
             </section>}
-            <Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} showSales={showSales} />{canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }<Overview state={state} filter={filter} period={period} showSales={showSales} showInventory={analyticsAccess.inventory} showCrm={analyticsAccess.crm} />
+            <OverviewFinance state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} />
+            {canAccess(user, "consignados") && <Consignment state={state} filter={filter} /> }
+            <Overview state={state} filter={filter} period={period} showSales={showSales} showInventory={analyticsAccess.inventory} showCrm={analyticsAccess.crm} />
+            <Rankings state={state} filter={filter} period={period} admin={canAccess(user, "financeiro")} showSales={showSales} />
             <OverviewAnalytics state={state} store={filter || undefined} from={period.from} to={period.to} access={analyticsAccess} />
             {analyticsAccess.inventory && <InventoryOverview state={state} filter={filter} showCost={canAccess(user, "financeiro") || showPurchases} />}
             {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}

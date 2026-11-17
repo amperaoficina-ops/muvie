@@ -69,20 +69,27 @@ function RankChart({ title, rows }: { title: string; rows: ReturnType<typeof sal
 }
 
 export function Rankings({ state, filter, period, admin, showSales }: { state: RetailState; filter: Filter; period: Period; admin: boolean; showSales: boolean }) {
+  if (!showSales) return null;
   const selected = filter || undefined;
-  const report = admin ? financialReport(state, period.from, period.to, selected) : null;
   return <>
-    <PeriodFilter period={period} filter={filter} tab="visao" />
-    {showSales && <div className="overview-grid">
-      <RankChart title="Modelos mais vendidos" rows={salesRanking(state, period.from, period.to, selected)} />
-      <RankChart title="Vendas por vendedor" rows={salesRanking(state, period.from, period.to, selected, true)} />
-    </div>}
-    {report && showSales && <section className="panel">
+    {admin && <section className="panel">
       <div className="panel-title"><h2>Margem por modelo</h2></div>
       <dl className="finance-rows">{modelMarginRanking(state, period.from, period.to, selected).slice(0, 8).map((row) =>
         <div key={row.label}><dt>{row.label}</dt><dd>{money(row.margin)}</dd></div>)}</dl>
       <p className="admin-empty">Receita menos custo, taxas de cartão, impostos, comissão e brindes rateados pelo valor dos itens vendidos. Considera vendas com custo completo.</p>
     </section>}
+    <div className="overview-grid">
+      <RankChart title="Modelos mais vendidos" rows={salesRanking(state, period.from, period.to, selected)} />
+      <RankChart title="Vendas por vendedor" rows={salesRanking(state, period.from, period.to, selected, true)} />
+    </div>
+  </>;
+}
+
+export function OverviewFinance({ state, filter, period, admin }: { state: RetailState; filter: Filter; period: Period; admin: boolean }) {
+  const selected = filter || undefined;
+  const report = admin ? financialReport(state, period.from, period.to, selected) : null;
+  return <>
+    <PeriodFilter period={period} filter={filter} tab="visao" />
     {report && <section className="panel">
       <div className="panel-title"><h2>Lucro e caixa por loja</h2></div>
       <div className="table-wrap"><table><thead><tr>
