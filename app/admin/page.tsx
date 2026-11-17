@@ -66,7 +66,7 @@ const nav = [
 ] as const;
 type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
-  { title: "Operação", tabs: ["visao", "vendas", "contratos", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
+  { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras", "contratos"] },
   { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "caixa", "distribuicoes", "compromissos", "taxas", "impostos", "usuarios", "logs"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
