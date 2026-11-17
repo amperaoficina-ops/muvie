@@ -804,7 +804,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; maquininha?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; maquininha?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -815,6 +815,12 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const showSales = canAccess(user, "vendas");
   const showPurchases = canAccess(user, "compras");
   const period = reportPeriod(params.inicio, params.fim);
+  const commitmentKind = params.tipoCompromisso === "fixos" ? "fixos" : undefined;
+  const commitmentDeadline = ["mes", "atrasados", "a-vencer"].find((item) => item === params.prazoCompromisso);
+  const commitmentQuery = active.id === "compromissos" ? "&" + new URLSearchParams({
+    ...(commitmentKind ? { tipoCompromisso: commitmentKind } : {}),
+    ...(commitmentDeadline ? { prazoCompromisso: commitmentDeadline } : {}),
+  }) : "";
   const periodQuery = active.id === "financeiro" || active.id === "visao" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to }) : "";
   const showInvoices = ["compras", "vendas", "crm"].includes(active.id) || (active.id === "visao" && (showSales || showPurchases));
   const [state, invoices, users] = await Promise.all([
@@ -880,8 +886,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador", "fornecedores"].includes(active.id) && <div className={"admin-filter-bar" + (actionBesideUnits ? " crm-filter-bar" : "")}>
             {actionBesideUnits && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
             <div className="unit-filter"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
-            <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery}>Todas</Link>
-            {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery} key={store.id}>{store.name}</Link>)}
+            <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery + commitmentQuery}>Todas</Link>
+            {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery + commitmentQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
           {!denied && state && active.id === "compromissos" && primary && <div className="admin-filter-bar">
             <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
@@ -917,7 +923,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
-          {active.id === "compromissos" && <Commitments state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
+          {active.id === "compromissos" && <Commitments kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} machines={state.cardMachines} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
             lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}

@@ -1,6 +1,6 @@
 import "server-only";
 import { MongoServerError } from "mongodb";
-import { emptyRetailState, RetailError, type RetailState } from "@/domain/retail";
+import { businessDate, emptyRetailState, materializeCommitments, RetailError, type RetailState } from "@/domain/retail";
 import { getMongoDb } from "./mongodb";
 
 type RetailDocument = { _id: "retail"; revision: number; state: RetailState };
@@ -8,7 +8,9 @@ const key = "retail";
 
 function currentState(doc: RetailDocument | null): RetailState {
   if (!doc) return emptyRetailState();
-  return { ...emptyRetailState(), ...doc.state };
+  const state = { ...emptyRetailState(), ...doc.state };
+  materializeCommitments(state, businessDate());
+  return state;
 }
 
 async function collection() {

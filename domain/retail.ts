@@ -16,6 +16,8 @@ export type LedgerEntry = {
   id: string; store: StoreId; name: string; direction: "in" | "out";
   kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste";
   amount: number; date: string; due: string; saleId?: string; cardFee?: number; nonCash?: boolean; canceled?: boolean; manual?: boolean;
+  recurrence?: { months?: number; endedOn?: string; due: string };
+  recurringFrom?: string;
   settlements: { id: string; amount: number; date: string; reversedOn?: string }[];
 };
 export type StockLot = { purchaseId: string; productId: string; store: StoreId; quantity: number; unitCost: number; consigned: boolean; supplier: string; date: string };
@@ -162,6 +164,35 @@ export function reverseSettlement(state: RetailState, entryId: string, paymentId
   if (entry.nonCash && state.ledger.some((item) => item.id === entry.id + "-asset-sale")) throw new RetailError("Este bem já foi vendido.");
   if (!isCalendarDate(date) || date < payment.date) throw new RetailError("Informe uma data igual ou posterior à baixa.");
   payment.reversedOn ??= date;
+}
+
+export function isFixedCommitment(entry: LedgerEntry) {
+  return entry.kind === "fixo" || entry.kind === "salario" || Boolean(entry.recurrence || entry.recurringFrom);
+}
+
+export function materializeCommitments(state: RetailState, asOf: string) {
+  const ids = new Set(state.ledger.map((entry) => entry.id));
+  for (const template of state.ledger.filter((entry) => entry.recurrence)) {
+    const rule = template.recurrence!;
+    const [year, month, day] = template.date.split("-").map(Number);
+    const [dueYear, dueMonth, dueDay] = rule.due.split("-").map(Number);
+    const end = [asOf, rule.endedOn ?? asOf].sort()[0].slice(0, 7);
+    for (let offset = 1; offset < (rule.months ?? Infinity); offset++) {
+      const date = new Date(Date.UTC(year, month - 1 + offset, 1));
+      const period = date.toISOString().slice(0, 7);
+      if (period > end) break;
+      const id = template.id + "-" + period;
+      if (ids.has(id)) continue;
+      const clamp = (stamp: Date, desired: number) => {
+        const last = new Date(Date.UTC(stamp.getUTCFullYear(), stamp.getUTCMonth() + 1, 0)).getUTCDate();
+        return stamp.toISOString().slice(0, 7) + "-" + String(Math.min(desired, last)).padStart(2, "0");
+      };
+      const due = new Date(Date.UTC(dueYear, dueMonth - 1 + offset, 1));
+      state.ledger.push({ id, store: template.store, name: template.name, direction: template.direction, kind: template.kind,
+        amount: template.amount, date: clamp(date, day), due: clamp(due, dueDay), settlements: [], manual: true, recurringFrom: template.id });
+      ids.add(id);
+    }
+  }
 }
 
 export function postMonthlyCosts(state: RetailState, store: StoreId, month: string) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, sellTradeInAsset, recordPurchase, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, sellTradeInAsset, recordPurchase, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -301,4 +301,18 @@ test("revenda de bem recebido registra caixa na unidade de origem uma única vez
   assert.equal(financialReport(state, "2026-11-08", "2026-11-08", "sao-jose").cash, 0);
   assert.equal(tradeInAssets(state)[0].resale.amount, 420000);
   assert.throws(() => cancelSale(state, input.id, date, true), /bem de troca já vendido/);
+});
+
+test("recorrência mensal ajusta dias inexistentes, respeita duração e não duplica lançamentos", () => {
+  const state = fixture();
+  const template = { id: "aluguel", store: "sao-jose", name: "Aluguel", kind: "despesa", direction: "out",
+    amount: 100000, date: "2026-01-31", due: "2026-01-31", settlements: [], recurrence: { months: 3, due: "2026-01-31" } };
+  state.ledger.push(template);
+  materializeCommitments(state, "2026-02-01");
+  materializeCommitments(state, "2026-04-01");
+  assert.deepEqual(state.ledger.map((entry) => entry.date), ["2026-01-31", "2026-02-28", "2026-03-31"]);
+  assert.equal(financialReport(state, "2026-02-01", "2026-02-28", "sao-jose").expenses, 100000);
+  template.recurrence = { due: "2026-01-31", endedOn: "2026-03-10" };
+  materializeCommitments(state, "2026-05-01");
+  assert.equal(state.ledger.length, 3);
 });

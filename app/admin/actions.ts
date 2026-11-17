@@ -65,6 +65,12 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
   const params = new URLSearchParams({ tab });
   const category = form.get("stockCategory");
   if (tab === "estoque" && productCategories.some((item) => item === category)) params.set("categoria", String(category));
+  if (tab === "compromissos") {
+    for (const key of ["tipoCompromisso", "prazoCompromisso"]) {
+      const filter = form.get(key);
+      if (typeof filter === "string" && /^[a-z-]{1,30}$/.test(filter)) params.set(key, filter);
+    }
+  }
   if (tab === "taxas") {
     const machine = form.get("machineId");
     if (typeof machine === "string" && (uuidPattern.test(machine) || machine === legacyCardMachine)) params.set("maquininha", machine);
@@ -475,9 +481,15 @@ export async function saveLedgerEntry(form: FormData) {
     const due = requiredDate(form, "due", true);
     const total = amount(form, "amount");
     if (total <= 0 || due < date) throw new RetailError("Informe valor positivo e vencimento a partir da data do lançamento.");
+    const fixed = form.get("frequency") === "fixed";
+    const duration = fixed ? value(form, "repeatMonths", 3, false) : "";
+    const months = duration ? Number(duration) : undefined;
+    if (months !== undefined && (!/^\d+$/.test(duration) || !Number.isInteger(months) || months < 1 || months > 120)) {
+      throw new RetailError("Informe entre 1 e 120 meses ou deixe em branco para repetir até encerrar.");
+    }
     state.ledger.unshift({ id, store: choice(form, "store", storeIds(state)), name: value(form, "name", 120),
       direction, kind: classification === "somente-caixa" ? "ajuste" : direction === "in" ? "outra-receita" : "despesa",
-      amount: total, date, due, settlements: [], manual: true });
+      amount: total, date, due, settlements: [], manual: true, ...(fixed && { recurrence: { months, due } }) });
   });
 }
 
@@ -485,9 +497,15 @@ export async function updateLedger(form: FormData) {
   const paymentId = randomUUID();
   await commit(form, "compromissos", "Compromisso atualizado.", (state) => {
     const id = value(form, "id");
-    const entry = state.ledger.find((item) => item.id === id && !item.canceled);
+    const mode = choice(form, "mode", ["pay", "reverse", "schedule", "cancel", "end-recurrence"]);
+    const entry = state.ledger.find((item) => item.id === id && (!item.canceled || mode === "end-recurrence"));
     if (!entry) throw new RetailError("Compromisso indisponível.");
-    const mode = choice(form, "mode", ["pay", "reverse", "schedule", "cancel"]);
+    if (mode === "end-recurrence") {
+      const template = entry.recurringFrom ? state.ledger.find((item) => item.id === entry.recurringFrom) : entry;
+      if (!template?.recurrence) throw new RetailError("Compromisso sem recorrência.");
+      template.recurrence.endedOn ??= localToday();
+      return;
+    }
     if (mode === "cancel") {
       if (!entry.manual || entry.settlements.some((payment) => !payment.reversedOn)) throw new RetailError("Só é possível cancelar um compromisso manual sem baixas ativas.");
       entry.canceled = true;
