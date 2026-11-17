@@ -29,8 +29,7 @@ export function ModelDetails({ name, imageUrl, specs, colors = [] }: { name: str
           <dl>{scooterFields.filter(({ key }) => key !== "colors").map(({ key, label }) => (
             <div key={key}><dt>{label}</dt><dd>{specs?.[key] || <span>A confirmar</span>}</dd></div>
           ))}</dl>
-          <a className="button yellow" href={instagram} target="_blank" rel="noreferrer">Quero fazer um test ride <Icon name="external" size={16} /></a>
-          <p className="model-dialog-note">Converse com a equipe pelo Instagram para combinar o teste.</p>
+          <a className="button yellow" href={instagram} target="_blank" rel="noreferrer">Entrar em contato <Icon name="external" size={16} /></a>
         </div>
       </div>
     </dialog>
