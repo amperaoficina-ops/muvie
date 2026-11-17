@@ -1,5 +1,6 @@
 "use client";
 
+import "./simulator.css";
 import { useState } from "react";
 import { money, paymentMethods, percentageAmount, type Store, type CardRate, type TaxRate } from "@/domain/retail";
 import { parseReais } from "@/domain/money-input";
@@ -24,28 +25,28 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
   const rate = taxRates.find((item) => item.id === taxMode) ?? taxRates.find((item) => item.defaultForSale);
   const tax = taxMode === "manual" ? parseReais(manualTax) : percentageAmount(quote?.total ?? 0, rate?.basisPoints ?? 0);
 
-  return <div className="operation-grid">
+  return <div className="operation-grid simulator-layout">
     <section className="panel">
       <div className="panel-title"><h2>Monte a proposta</h2></div>
-      <div className="admin-form">
+      <div className="admin-form simulator-form">
         <label>Unidade<select value={store} onChange={(event) => { setStore(event.target.value); setItems([{ productId: "", quantity: "1" }]); }}>
           {stores.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
         </select></label>
         <label>Nome do cliente (opcional)<input value={customer} maxLength={100} onChange={(event) => setCustomer(event.target.value)} /></label>
         <fieldset className="checkout-group span-two"><legend>Produtos</legend>
-          {items.map((item, index) => <div className="admin-form" key={index}>
+          {items.map((item, index) => <div className="simulator-row" key={index}>
             <label>Produto <select value={item.productId} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, productId: event.target.value } : row))}>
               <option value="">{available.length ? "Selecione um produto" : "Sem produtos disponíveis"}</option>
               {available.map((row) => <option value={row.id} key={row.id}>{row.name} · {money(row.price)} · {row.stock[store]} un.</option>)}
             </select></label>
             <label>Quantidade<input type="number" min="1" value={item.quantity} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, quantity: event.target.value } : row))} /></label>
-            {items.length > 1 && <button type="button" className="button" onClick={() => setItems(items.filter((_, i) => i !== index))}>Remover produto</button>}
+            {items.length > 1 && <button type="button" className="button simulator-remove" onClick={() => setItems(items.filter((_, i) => i !== index))}>Remover produto</button>}
           </div>)}
           <button type="button" className="button" disabled={items.length >= 20} onClick={() => setItems([...items, { productId: "", quantity: "1" }])}>Adicionar produto</button>
         </fieldset>
-        <label>Desconto (R$)<input value={discount} inputMode="decimal" placeholder="0,00" onChange={(event) => setDiscount(event.target.value)} /></label>
+        <label className="span-two">Desconto (R$)<input value={discount} inputMode="decimal" placeholder="0,00" onChange={(event) => setDiscount(event.target.value)} /></label>
         <fieldset className="checkout-group span-two"><legend>Pagamento</legend>
-          {payments.map((payment, index) => <div className="admin-form" key={index}>
+          {payments.map((payment, index) => <div className="simulator-row" key={index}>
             <label>Forma de pagamento<select value={payment.method} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, method: event.target.value } : row))}>
               {paymentMethods.map((method) => <option key={method}>{method}</option>)}
             </select></label>
@@ -54,7 +55,7 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
               {!rates.length && <option value="">Nenhuma taxa cadastrada</option>}
               {rates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.mode} · {item.installments}×</option>)}
             </select></label>}
-            {payments.length > 1 && <button type="button" className="button" onClick={() => setPayments(payments.filter((_, i) => i !== index))}>Remover pagamento</button>}
+            {payments.length > 1 && <button type="button" className="button simulator-remove" onClick={() => setPayments(payments.filter((_, i) => i !== index))}>Remover pagamento</button>}
           </div>)}
           {base && payments.length > 1 && <p className="form-note">
             {difference === 0 ? "Valores somam o total da proposta." : difference > 0
@@ -72,11 +73,12 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
         </>}
       </div>
     </section>
-    <section className="panel quote-result">
+    <section className="panel quote-result simulator-summary">
       <div className="panel-title"><h2>Resumo para atendimento</h2></div>
       {quote ? <div className="quote-body">
-        <span>Total para o cliente</span><strong>{money(quote.total)}</strong>
+        <div className="simulator-total"><span>Total para o cliente</span><strong>{money(quote.total)}</strong></div>
         {quote.discount > 0 && <p>Desconto de {money(quote.discount)} incluído</p>}
+        <h3>Condições de pagamento</h3>
         <dl>{quote.payments.map((payment, index) => <div key={index}>
           <dt>{payment.method}{payment.installments && <small>{payment.installments}</small>}</dt><dd>{money(payment.amount)}</dd>
         </div>)}</dl>
@@ -87,11 +89,11 @@ export function Simulator({ products, rates, initialStore, stores, taxRates, sho
           {payments.map((payment, index) => <div key={index}><input type="hidden" name="method" value={payment.method} /><input type="hidden" name="amount" value={payment.amount} /><input type="hidden" name="rate" value={payment.rateId} /></div>)}
           <button type="submit" className="button yellow">Baixar PDF da proposta</button>
         </form>
-        {showFinance && <dl>
+        {showFinance && <details className="simulator-finance"><summary>Detalhes financeiros</summary><dl>
           <div><dt>Taxa de cartão</dt><dd>{money(quote.fees)}</dd></div>
           <div><dt>Imposto estimado</dt><dd>{tax == null || tax > quote.total ? "Confira o valor" : money(tax)}</dd></div>
           {tax != null && tax <= quote.total && <div><dt>Líquido após taxas e imposto</dt><dd>{money(quote.total - quote.fees - tax)}</dd></div>}
-        </dl>}
+        </dl></details>}
         <small>Simulação sem reserva de estoque.</small>
       </div> : <p className="admin-empty">Selecione os produtos e confira as quantidades, o desconto e os pagamentos. Ao combinar formas, a soma deve bater com o total da proposta.</p>}
     </section>
