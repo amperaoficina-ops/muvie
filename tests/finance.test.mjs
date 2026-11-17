@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  correctHistoricalPayments, historicalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, balanceDue, cancelSale, emptyRetailState, financialReport, postMonthlyCosts, recordPurchase,
+  submitStoreSale, reviewStoreSale, correctHistoricalPayments, historicalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, balanceDue, cancelSale, emptyRetailState, financialReport, postMonthlyCosts, recordPurchase,
   recordSale, reverseSettlement, salesRanking, settleEntry, transferStock,
 } from "../domain/retail.ts";
 
@@ -168,4 +168,34 @@ test("compra antiga só entra nas saídas após confirmar baixa pela data e unid
   assert.equal(financialReport(state, paidOn, paidOn, store).purchaseOutflow, 600000);
   assert.equal(financialReport(state, paidOn, paidOn, "sao-jose").outgoing, 0);
   assert.deepEqual(state.products[0].stock, stock);
+});
+
+test("vendedor precisa de aprovação abaixo de mil reais e aprovação não lança comissão automática", () => {
+  const state = fixture();
+  recordPurchase(state, { ...purchase, store: sale.store, unitCost: 400000, acquisition: "quitada" });
+  const checkout = {
+    id: sale.id, store: sale.store, customer: "Cliente", contactId: "", sellerId: "e1", createdAt: time, discount: 1,
+    items: [{ productId: "s1", quantity: 1, origin: purchase.id, gift: false }],
+    payments: [{ method: "Pix", amount: 499999, received: true, due: "" }],
+  };
+  const movements = structuredClone(state.movements);
+  const ledger = structuredClone(state.ledger);
+  assert.equal(submitStoreSale(state, { checkout, requestedBy: "seller" }, true), "pending");
+  assert.equal(submitStoreSale(state, { checkout, requestedBy: "seller" }, true), "pending");
+  assert.equal(state.saleApprovalRequests.length, 1);
+  assert.equal(state.saleApprovalRequests[0].profit, 99999);
+  assert.equal(state.sales.length, 0);
+  assert.deepEqual(state.movements, movements);
+  assert.deepEqual(state.ledger, ledger);
+  state.stockLots[0].unitCost += 1;
+  assert.throws(() => reviewStoreSale(state, checkout.id, true), /margem mudou/);
+  state.stockLots[0].unitCost -= 1;
+  reviewStoreSale(state, checkout.id, true);
+  assert.equal(state.sales[0].commission, 0);
+  assert.equal(state.sales[0].sellerMarginRestricted, true);
+  assert.equal(state.saleApprovalRequests.length, 0);
+  assert.equal(state.ledger.some((entry) => entry.kind === "comissao"), false);
+  assert.throws(() => reviewStoreSale(state, checkout.id, true), /indisponível/);
+  const atLimit = { ...checkout, id: "limite", discount: 0, payments: [{ ...checkout.payments[0], amount: 500000 }] };
+  assert.equal(submitStoreSale(state, { checkout: atLimit, requestedBy: "seller" }, true), "registered");
 });

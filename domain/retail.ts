@@ -89,13 +89,14 @@ export type Sale = {
   discount: number; total: number; method: typeof paymentMethods[number];
   lines?: SaleLine[]; payments?: SalePayment[]; cardFees?: number; tax?: SaleTax;
   createdAt: string; canceledAt?: string; fiscalNotes?: string;
-  sellerId?: string; sellerName?: string; commission?: number; cost?: number; missingCostUnits?: number; allocations?: StockLot[]; origin?: string;
+  sellerMarginRestricted?: boolean; sellerId?: string; sellerName?: string; commission?: number; cost?: number; missingCostUnits?: number; allocations?: StockLot[]; origin?: string;
 };
 export type Movement = {
   id: string; store: StoreId; productId: string; productName: string; quantity: number;
   reason: string; createdAt: string; reference?: string;
 };
 export type RetailState = {
+  saleApprovalRequests?: SaleApprovalRequest[];
   cashAccounts?: CashAccount[];
   cashAssignments?: CashAssignment[];
   cashReconciliations?: CashReconciliation[];
@@ -672,7 +673,7 @@ export function recordSale(state: RetailState, input: SaleInput, gift = false) {
 export type CheckoutItem = { productId: string; quantity: number; origin: string; gift: boolean; unitCostOverride?: number };
 export type CheckoutPayment = { assetDescription?: string; method: SalePayment["method"]; amount: number; received: boolean; due: string; rateId?: string };
 export type CheckoutInput = Omit<SaleInput, "productId" | "quantity" | "method" | "origin" | "receive"> & {
-  items: CheckoutItem[]; payments: CheckoutPayment[]; taxRateId?: string; manualTax?: number;
+  items: CheckoutItem[]; payments: CheckoutPayment[]; taxRateId?: string; manualTax?: number; deferCommission?: boolean;
 };
 
 export function recordCheckout(state: RetailState, input: CheckoutInput) {
@@ -734,7 +735,7 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
   }));
   const sum = (key: "cost" | "missingCostUnits" | "commission") => snapshots.reduce((value, row) => value + (row.sale[key] ?? 0), 0);
   const seller = draft.staff.find((item) => item.id === input.sellerId);
-  const commission = seller ? Number((BigInt(total) * BigInt(seller.commissionBps) + BigInt(5000)) / BigInt(10000)) : 0;
+  const commission = seller && !input.deferCommission ? Number((BigInt(total) * BigInt(seller.commissionBps) + BigInt(5000)) / BigInt(10000)) : 0;
   const prefix = input.id + "-item-";
   draft.ledger = draft.ledger.filter((entry) => !entry.saleId?.startsWith(prefix) || entry.kind !== "comissao");
   for (const entry of draft.ledger) if (entry.saleId?.startsWith(prefix)) entry.saleId = input.id;
@@ -1056,4 +1057,65 @@ export function registerHistoricalPurchasePayment(state: RetailState, id: string
   state.ledger.unshift({ id: id + "-payable", store: purchase.store, name: "Compra · " + purchase.supplier, kind: "estoque",
     direction: "out", amount: purchase.total, date: purchase.date, due: paidOn,
     settlements: [{ id: id + "-paid", amount: purchase.total, date: paidOn }] });
+}
+
+export const sellerMinimumProfit = 100_000;
+
+export type SaleApprovalRequest = {
+  checkout: CheckoutInput; contact?: Contact; requestedBy: string; profit: number;
+};
+
+function previewSaleApproval(state: RetailState, request: Pick<SaleApprovalRequest, "checkout" | "contact">) {
+  const draft = structuredClone(state);
+  const { checkout, contact } = request;
+  if (contact) {
+    if (contact.cpf && draft.contacts.some((item) => item.cpf === contact.cpf)) {
+      throw new RetailError("O CPF já foi cadastrado. Refaça a venda vinculando o cliente existente.");
+    }
+    draft.contacts.unshift(contact);
+  }
+  for (const payment of checkout.payments) {
+    if (payment.method !== "Cartão") continue;
+    const rate = draft.cardRates.find((item) => item.id === payment.rateId);
+    if (!rate || !cardMachineIsActive(draft.cardMachines, rateMachineId(rate))) {
+      throw new RetailError("A taxa ou maquininha da venda está indisponível. Revise os pagamentos.");
+    }
+  }
+  recordCheckout(draft, { ...checkout, deferCommission: true });
+  const sale = draft.sales[0];
+  return { draft, sale };
+}
+
+export function submitStoreSale(state: RetailState, request: Omit<SaleApprovalRequest, "profit">, restricted: boolean) {
+  const id = request.checkout.id;
+  if (state.sales.some((sale) => sale.id === id)) return "registered";
+  if (state.saleApprovalRequests?.some((item) => item.checkout.id === id)) return "pending";
+  const { draft, sale } = previewSaleApproval(state, request);
+  if (restricted) {
+    sale.sellerMarginRestricted = true;
+    const profit = saleNetProfit(sale);
+    if (profit === null) throw new RetailError("Não foi possível verificar a margem. Peça à Diretoria para revisar os custos.");
+    if (profit < sellerMinimumProfit) {
+      (state.saleApprovalRequests ??= []).unshift({ ...request, profit });
+      return "pending";
+    }
+  }
+  Object.assign(state, draft);
+  return "registered";
+}
+
+export function reviewStoreSale(state: RetailState, id: string, approve: boolean) {
+  const request = state.saleApprovalRequests?.find((item) => item.checkout.id === id);
+  if (!request) throw new RetailError("Solicitação de venda indisponível.");
+  if (!approve) {
+    state.saleApprovalRequests = state.saleApprovalRequests?.filter((item) => item.checkout.id !== id);
+    return;
+  }
+  const { draft, sale } = previewSaleApproval(state, request);
+  if (saleNetProfit(sale) !== request.profit) {
+    throw new RetailError("A margem mudou desde a solicitação. Recuse e peça para registrar a venda novamente.");
+  }
+  sale.sellerMarginRestricted = true;
+  draft.saleApprovalRequests = draft.saleApprovalRequests?.filter((item) => item.checkout.id !== id);
+  Object.assign(state, draft);
 }

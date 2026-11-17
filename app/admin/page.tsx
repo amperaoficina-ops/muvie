@@ -24,7 +24,7 @@ import {
   canCorrectLegacySale, historicalPayments, needsHistoricalPurchasePayment, balanceDue, businessDate, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
+import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, reviewSaleApproval, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -821,6 +821,9 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
                 <input name="cardFee" inputMode="decimal" required maxLength={32}
                   defaultValue={(payment.fee / 100).toFixed(2).replace(".", ",")} />
               </label>)}
+          {sale.sellerMarginRestricted && <label className="checkbox">
+            <input type="checkbox" name="confirmLowMargin" /> Aprovar margem final abaixo de R$ 1.000, se for o caso
+          </label>}
           <Submit>Salvar custos</Submit>
         </form>
       </details>}{!sale.canceledAt && <details className="sale-detail-card cancel-sale"><summary>Cancelar venda</summary>
@@ -836,7 +839,7 @@ function SalesTable({ state, sales, filter, canCancel = false, invoices, focus, 
   })}</Table>;
 }
 
-function Sales({ state, filter, invoices, focus, error, showCost, canEditCosts, saleFilter, detailFeedback }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string; error?: string; showCost: boolean; canEditCosts: boolean; saleFilter?: string; detailFeedback?: { message: string; error: boolean } }) {
+function Sales({ state, filter, invoices, focus, error, showCost, canEditCosts, saleFilter, detailFeedback, user }: { state: RetailState; filter: Filter; invoices: InvoiceMeta[] | null; focus?: string; error?: string; showCost: boolean; canEditCosts: boolean; saleFilter?: string; detailFeedback?: { message: string; error: boolean }; user: User }) {
   const sales = state.sales.filter((sale) => !filter || sale.store === filter);
   const active = sales.filter((sale) => !sale.canceledAt);
   const attached = new Set(invoices?.filter((invoice) => invoice.owner === "sale").map((invoice) => invoice.ownerId));
@@ -851,6 +854,8 @@ function Sales({ state, filter, invoices, focus, error, showCost, canEditCosts, 
   const selected = filters.find((item) => item.id === saleFilter) ?? filters[0];
   const contacts = state.contacts.filter((contact) => !filter || contact.store === filter);
   const products = state.products.filter((product) => product.price > 0 && (filter ? product.stock[filter] > 0 : storeList(state).some((store) => product.stock[store.id] > 0)));
+  const approvals = (state.saleApprovalRequests ?? []).filter((request) =>
+    (!filter || request.checkout.store === filter) && (canEditCosts || request.requestedBy === user.email));
   const saleId = randomUUID();
   return <div className="sales-workspace">
     <CreateDialog id="nova-venda" title="Nova venda" key={saleId} reopen={Boolean(error)}>
@@ -860,12 +865,34 @@ function Sales({ state, filter, invoices, focus, error, showCost, canEditCosts, 
         <SaleCustomer contacts={contacts.map((contact) => ({ id: contact.id, label: contact.name + " · " + storeName(contact.store, state) }))} />
         <CheckoutFields units={storeList(state)} initialStore={filter} rates={state.cardRates} machines={state.cardMachines} taxRates={state.taxRates ?? []}
           products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))}
-          showCost={showCost}
-          sellers={state.staff.filter((item) => item.active && (!filter || item.store === filter)).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps: showCost ? commissionBps : 0 }))}
-          lots={state.stockLots.map((lot) => ({ ...lot, unitCost: showCost ? lot.unitCost : 0 }))} />
+          showCost={showCost && user.role !== "sales"} restricted={user.role === "sales"}
+          sellers={state.staff.filter((item) => item.active && (!filter || item.store === filter)).map(({ id, name, store }) => ({ id, name, store }))}
+          lots={state.stockLots.map((lot) => ({ ...lot, unitCost: showCost && user.role !== "sales" ? lot.unitCost : 0 }))} />
+        {user.role === "sales" && <p className="form-note span-two">Vendas com margem abaixo de R$ 1.000 seguem para a Diretoria aprovar. A comissão é lançada pela Diretoria após o registro.</p>}
         <div className="span-two"><Submit>Registrar venda</Submit></div>
       </form> : <Empty>Para registrar uma venda, cadastre um produto com preço e adicione saldo à unidade em <Link href={adminUrl("estoque", filter)}>Estoque</Link>.</Empty>}
     </CreateDialog>
+    {approvals.length > 0 && <section className="panel">
+      <div className="panel-title"><h2>Vendas aguardando aprovação</h2><span className="pill">{approvals.length}</span></div>
+      <Table headers={["Venda", "Unidade", "Total", ...(canEditCosts ? ["Margem antes da comissão", "Ações"] : ["Status"])]}>
+        {approvals.map(({ checkout, requestedBy, profit }) => <tr key={checkout.id}>
+          <td><strong>{checkout.customer || state.contacts.find((contact) => contact.id === checkout.contactId)?.name || "Cliente da venda"}</strong>
+            <small>{checkout.items.map((item) => item.quantity + " × " + (state.products.find((product) => product.id === item.productId)?.name ?? "Produto")
+              + (item.gift ? " (brinde)" : "")).join(" · ")}</small>
+            <small>{checkout.payments.map((payment) => payment.method + " " + money(payment.amount)).join(" · ")}</small>
+            {canEditCosts && <small>Solicitado por {requestedBy}</small>}
+          </td>
+          <td>{storeName(checkout.store, state)}</td><td>{money(checkout.payments.reduce((sum, payment) => sum + payment.amount, 0))}</td>
+          {canEditCosts ? <><td>{money(profit)}</td><td>
+            <form action={reviewSaleApproval} className="admin-filter-bar">
+              <FilterInput filter={filter} /><input type="hidden" name="requestId" value={checkout.id} />
+              <button className="button yellow" type="submit" name="decision" value="approve">Aprovar e registrar</button>
+              <button className="button danger" type="submit" name="decision" value="reject">Recusar</button>
+            </form>
+          </td></> : <td><span className="pill">Aguardando Diretoria</span></td>}
+        </tr>)}
+      </Table>
+    </section>}
     <section className="panel sale-follow-up">
       <div className="panel-title"><h2>Acompanhamento de vendas</h2></div>
       <nav className="dashboard-values sale-filters" aria-label="Filtros de vendas">
@@ -1101,7 +1128,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
           {active.id === "compras" && <Purchases canCancel={user.role === "admin" || isPrimaryAdmin(user)} canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} success={params.ok} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
-            <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
+            <Sales user={user} canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "distribuicoes" && <ProfitDistributions directors={users?.filter((item) => !item.disabled && isDirector(item)) ?? null} state={state} filter={filter} error={params.erro} />}

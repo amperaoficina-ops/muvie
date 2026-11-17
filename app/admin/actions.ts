@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
+  correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, submitStoreSale, reviewStoreSale, sellerMinimumProfit, saleNetProfit, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -62,7 +62,7 @@ function units(form: FormData) {
   return quantity;
 }
 
-async function runAction(form: FormData, tab: Tab, message: string, execute: (user: User) => Promise<void>, refreshCatalog = false) {
+async function runAction(form: FormData, tab: Tab, message: string | (() => string), execute: (user: User) => Promise<void>, refreshCatalog = false) {
   const user = await requireUser();
   const filter = form.get("filter");
   const params = new URLSearchParams({ tab });
@@ -115,7 +115,7 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
       revalidatePath("/modelos");
     }
     revalidatePath("/admin");
-    params.set("ok", message);
+    params.set("ok", typeof message === "function" ? message() : message);
   } catch (error) {
     if (!(error instanceof RetailError)) console.error("Erro ao gravar operação MUVI-E", error instanceof Error ? error.name : "Erro");
     params.set("erro", error instanceof RetailError ? error.message : "Não foi possível salvar no banco local. Tente novamente.");
@@ -337,7 +337,10 @@ export async function updateStock(form: FormData) {
 export async function saveSale(form: FormData) {
   const newContactId = randomUUID();
   const createdAt = new Date().toISOString();
-  await runAction(form, "vendas", "Venda registrada.", (user) => editWithAudit(user, "Venda registrada.", (state) => {
+  let result: ReturnType<typeof submitStoreSale> = "registered";
+  const message = () => result === "pending" ? "Venda enviada para aprovação da Diretoria." : "Venda registrada.";
+  await runAction(form, "vendas", message, (user) => editWithAudit(user, "Envia venda para conferência de margem " + value(form, "saleId", 36), (state) => {
+    const restricted = user.role === "sales";
     const id = value(form, "saleId", 36);
     if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário de venda.");
     if (state.sales.some((sale) => sale.id === id)) return;
@@ -345,18 +348,19 @@ export async function saveSale(form: FormData) {
     const mode = form.has("customerMode") ? choice(form, "customerMode", ["existing", "new", "walk-in"]) : "walk-in";
     let contactId = value(form, "contactId", 36, mode === "existing");
     const customer = mode === "existing" ? "" : value(form, "customer", 100, mode === "new");
+    let contact: RetailState["contacts"][number] | undefined;
     if (mode === "new") {
       const { email, cpf } = contactIdentity(form, state);
       contactId = newContactId;
-      state.contacts.unshift({ id: contactId, name: customer, phone: value(form, "phone", 32, false), email, cpf,
-        store, stage: "Ganho", interest: "", nextContact: "", notes: "", createdAt });
+      contact = { id: contactId, name: customer, phone: value(form, "phone", 32, false), email, cpf,
+        store, stage: "Ganho", interest: "", nextContact: "", notes: "", createdAt };
     }
     if (form.has("checkoutProduct")) {
       const products = form.getAll("checkoutProduct");
       const quantities = form.getAll("checkoutQuantity");
       const origins = form.getAll("checkoutOrigin");
       const overrides = form.getAll("checkoutCost");
-      if (!canAccess(user, "financeiro") && overrides.some((item) => String(item).trim())) throw new RetailError("Sem permissão para editar custos.");
+      if ((restricted || !canAccess(user, "financeiro")) && overrides.some((item) => String(item).trim())) throw new RetailError("Sem permissão para editar custos.");
       const kinds = form.getAll("checkoutKind");
       const methods = form.getAll("checkoutMethod");
       const assets = form.getAll("checkoutAsset");
@@ -365,10 +369,10 @@ export async function saveSale(form: FormData) {
       const machines = form.getAll("checkoutMachine");
       const statuses = form.getAll("checkoutStatus");
       const dates = form.getAll("checkoutDue");
-      const manualTax = form.get("taxMode") === "manual" ? value(form, "manualTax", 32) : undefined;
-      recordCheckout(state, { id, store, customer, contactId, createdAt, discount: amount(form, "discount"),
+      const manualTax = !restricted && form.get("taxMode") === "manual" ? value(form, "manualTax", 32) : undefined;
+      result = submitStoreSale(state, { contact, requestedBy: user.email, checkout: { id, store, customer, contactId, createdAt, discount: amount(form, "discount"),
         sellerId: value(form, "sellerId", 36, false),
-        taxRateId: value(form, "taxRateId", 36, false),
+        taxRateId: restricted ? undefined : value(form, "taxRateId", 36, false),
         manualTax: manualTax === undefined ? undefined : amount(form, "manualTax"),
         items: products.map((productId, index) => ({ productId: String(productId), quantity: Number(quantities[index]),
           origin: String(origins[index] ?? ""), gift: kinds[index] === "gift",
@@ -384,11 +388,21 @@ export async function saveSale(form: FormData) {
           return [{ method: matched, amount: paid, assetDescription: matched === "Produto" ? String(assets[index] ?? "").trim().slice(0, 120) : undefined, rateId: String(rates[index] ?? ""),
             received: statuses[index] === "received", due: String(dates[index] ?? "") }];
         }),
-      });
+      } }, restricted);
       return;
     }
     throw new RetailError("Reabra a página para registrar a venda com lotes de compra.");
   }));
+}
+
+export async function reviewSaleApproval(form: FormData) {
+  const approve = form.get("decision") === "approve";
+  await runAction(form, "vendas", approve ? "Venda aprovada e registrada." : "Solicitação recusada.", async (user) => {
+    if (!isDirector(user)) throw new RetailError("Somente a Diretoria pode decidir sobre a aprovação.");
+    const id = value(form, "requestId", 36);
+    if (form.get("decision") !== "approve" && form.get("decision") !== "reject") throw new RetailError("Selecione uma decisão válida.");
+    await editWithAudit(user, (approve ? "Aprova venda " : "Recusa venda ") + id, (state) => reviewStoreSale(state, id, approve));
+  });
 }
 
 export async function saveSupplier(form: FormData) {
@@ -741,12 +755,18 @@ export async function saveSaleCosts(form: FormData) {
     if (user.role !== "admin" && !isPrimaryAdmin(user)) throw new RetailError("Sem permissão para editar custos.");
     await editWithAudit(user, "Custos da venda atualizados.", (state) => {
       const readAmount = (amount: FormDataEntryValue | null) => typeof amount === "string" && amount.trim() ? parseReais(amount) ?? -1 : -1;
-      updateSaleCosts(state, value(form, "focus", 36), {
+      const id = value(form, "focus", 36);
+      updateSaleCosts(state, id, {
         costs: form.getAll("lineCost").map((item) => item === "" ? null : readAmount(item)),
         commission: readAmount(form.get("commission")),
         tax: readAmount(form.get("tax")),
         cardFees: form.getAll("cardFee").map(readAmount),
       });
+      const sale = state.sales.find((item) => item.id === id);
+      const profit = sale && saleNetProfit(sale);
+      if (sale?.sellerMarginRestricted && typeof profit === "number" && profit < sellerMinimumProfit && form.get("confirmLowMargin") !== "on") {
+        throw new RetailError("Confirme que a Diretoria aprova a margem final abaixo de R$ 1.000.");
+      }
     });
   });
 }

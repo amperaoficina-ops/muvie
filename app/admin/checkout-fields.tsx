@@ -10,8 +10,8 @@ type Item = { key: number; productId: string; quantity: number; gift: boolean; o
 type Payment = { assetDescription?: string; key: number; method: typeof paymentMethods[number]; value: string; rateId: string; machineId: string; received: boolean; due: string };
 type SaleProduct = Pick<Product, "id" | "name" | "sku" | "price" | "stock">;
 
-export function CheckoutFields({ units, initialStore, products, lots, rates, machines, sellers, showCost, taxRates }: {
-  units: readonly Store[]; initialStore: string; products: SaleProduct[]; lots: StockLot[]; rates: CardRate[]; machines: CardMachine[]; taxRates: TaxRate[]; sellers: { id: string; name: string; store: string; commissionBps: number }[]; showCost: boolean;
+export function CheckoutFields({ units, initialStore, products, lots, rates, machines, sellers, showCost, taxRates, restricted }: {
+  units: readonly Store[]; initialStore: string; products: SaleProduct[]; lots: StockLot[]; rates: CardRate[]; machines: CardMachine[]; taxRates: TaxRate[]; sellers: { id: string; name: string; store: string }[]; showCost: boolean; restricted: boolean;
 }) {
   const [store, setStore] = useState(initialStore);
   const [items, setItems] = useState<Item[]>([{ key: 0, productId: "", quantity: 1, gift: false, origin: "" }]);
@@ -57,7 +57,6 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
     const rate = payment.received && payment.method === "Cartão" ? rates.find((item) => item.id === payment.rateId) : undefined;
     return sum + (rate ? cardQuote(parseReais(amounts[index]) ?? 0, rate).fee : 0);
   }, 0);
-  const commission = Math.round(total * (sellers.find((seller) => seller.id === sellerId)?.commissionBps ?? 0) / 10000);
   const entered = amounts.reduce((sum, value) => sum + (parseReais(value) ?? 0), 0);
   const patchItem = (key: number, update: Partial<Item>) => setItems(items.map((item) => item.key === key ? { ...item, ...update } : item));
   const patchPayment = (key: number, update: Partial<Payment>) => setPayments(payments.map((item) => item.key === key ? { ...item, ...update } : item));
@@ -113,11 +112,11 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
     </fieldset>
     <fieldset className="address-fields span-two checkout-group">
       <legend>Imposto da venda</legend>
-      <label>Como calcular<SearchSelect value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
+      {!restricted && <label>Como calcular<SearchSelect value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
         <option value="">{defaultTax ? "Usar imposto padrão" : "Sem alíquota cadastrada"}</option>
         {taxRates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {(rate.basisPoints / 100).toLocaleString("pt-BR")}%{rate.defaultForSale ? " · padrão" : ""}</option>)}
         <option value="manual">Informar valor manual</option>
-      </SearchSelect></label>
+      </SearchSelect></label>}
       <input type="hidden" name="taxRateId" value={taxMode === "manual" ? "" : taxMode} />
       <input type="hidden" name="taxMode" value={taxMode === "manual" ? "manual" : "rate"} />
       {taxMode === "manual" ? <label>Imposto (R$)<input name="manualTax" inputMode="decimal" required maxLength={32} value={manualTax} onChange={(event) => setManualTax(event.target.value)} /></label>
@@ -131,8 +130,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
       <div><p>A receber</p><strong>{money(entered - receivedGross)}</strong></div>
       {showCost && <>
         <div><p>Custo dos itens e brindes</p><strong>{money(cost)}</strong>{missingCost && <small>Há itens sem custo cadastrado</small>}</div>
-        <div><p>Comissão estimada</p><strong>{money(commission)}</strong></div>
-        <div><p>Margem estimada da venda</p><strong>{missingCost ? "Custo incompleto" : money(total - fees - tax - cost - commission)}</strong></div>
+        <div><p>Margem antes da comissão</p><strong>{missingCost ? "Custo incompleto" : money(total - fees - tax - cost)}</strong></div>
       </>}
       {entered !== total && <div><p>{entered < total ? "Falta distribuir" : "Valor acima do total"}</p><strong>{money(Math.abs(total - entered))}</strong></div>}
     </div>
