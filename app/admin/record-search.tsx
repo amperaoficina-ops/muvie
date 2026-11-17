@@ -24,7 +24,7 @@ export function RecordSearch({ tab, store, category, stage, query, view }: { tab
   return <form className="workspace-section-links admin-record-search" role="search"
     onSubmit={(event) => { event.preventDefault(); search(value); }}>
     <input type="search" maxLength={100} value={value} onChange={(event) => search(event.target.value, 300)}
-      aria-label="Pesquisar registros" placeholder={tab === "crm" ? "Nome, CPF, telefone ou e-mail" : tab === "compras" ? "Produto, SKU ou fornecedor" : "Produto, SKU ou categoria"} />
+      aria-label="Pesquisar registros" placeholder={tab === "contratos" ? "Nome do documento ou arquivo" : tab === "crm" ? "Nome, CPF, telefone ou e-mail" : tab === "compras" ? "Produto, SKU ou fornecedor" : "Produto, SKU ou categoria"} />
     {value && <button className="button" type="button" onClick={() => search("")}>Limpar busca</button>}
   </form>;
 }

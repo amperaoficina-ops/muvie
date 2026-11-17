@@ -1,3 +1,4 @@
+import { matchesSearch } from "./search-text";
 import { Contracts } from "./contracts";
 import { HistoricalPayments } from "./historical-payments";
 import { Cash } from "./cash";
@@ -254,14 +255,6 @@ function ProductForm({ filter, product }: { filter: Filter; product?: Product })
     <label className="span-two">Descrição<textarea name="description" rows={2} maxLength={350} defaultValue={product?.description} /></label>
     <div className="span-two"><Submit>{product ? "Salvar alterações" : "Cadastrar produto"}</Submit></div>
   </form>;
-}
-
-function searchText(value: string) {
-  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase("pt-BR");
-}
-
-function matchesSearch(query: string, ...fields: string[]) {
-  return !query || searchText(fields.join(" ")).includes(searchText(query));
 }
 
 function CategoryFilters({ tab, filter, category, query, view }: { tab: "estoque" | "produtos" | "compras"; filter: Filter; category?: Product["category"]; query: string; view?: string }) {
@@ -1025,7 +1018,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const stockView = stockViews.find(({ id }) => id === params.estoqueVisao)?.id ?? "produtos";
   const stockViewQuery = active.id === "estoque" ? "&" + new URLSearchParams({ estoqueVisao: stockView }) : "";
   const categoryQuery = (active.id === "estoque" || active.id === "compras") && category ? "&" + new URLSearchParams({ categoria: category }) : "";
-  const supportsSearch = ["estoque", "compras", "produtos", "crm"].includes(active.id);
+  const supportsSearch = ["estoque", "compras", "produtos", "crm", "contratos"].includes(active.id);
   const query = supportsSearch && typeof params.busca === "string" ? params.busca.trim().slice(0, 100) : "";
   const searchQuery = query ? "&" + new URLSearchParams({ busca: query }) : "";
   const heading = active.id === "lojas" && filter ? "Unidade " + storeName(filter, state ?? undefined) : active.label;
@@ -1112,7 +1105,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} invoices={invoices ?? []} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
-          {active.id === "contratos" && <Contracts canImport={isDirector(user)} />}
+          {active.id === "contratos" && <Contracts canImport={isDirector(user)} query={query} />}
           {active.id === "caixa" && <Cash state={state} filter={filter} period={period} selected={params.conta} page={params.caixaPagina} direction={cashDirection} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "compromissos" && <Commitments view={commitmentView} paidFrom={paidFrom} paidTo={paidTo} requestedPage={params.compromissosPagina} kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
