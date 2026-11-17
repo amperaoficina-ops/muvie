@@ -508,3 +508,6 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 .catalog-colors { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; margin: .35rem 0; padding: 0; }
 .catalog-colors li { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: baseline; border: 1px solid #74766d; border-radius: 6px; padding: .35rem .5rem; font-size: .8rem; }
 .catalog-colors small { color: #bcbeb2; font-size: .72rem; }
+
+.catalog-admin-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: .45rem; }
+.catalog-admin-actions > :is(a, button), .catalog-admin-actions > form > button { white-space: nowrap; }

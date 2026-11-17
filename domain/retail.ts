@@ -14,8 +14,8 @@ export type StaffAdvance = { id: string; staffId: string; store: StoreId; date: 
 export type FixedCost = { id: string; name: string; store: StoreId; amount: number; day: number; active: boolean };
 export type Asset = { acquiredOn?: string; id: string; name: string; store: StoreId; quantity: number; amount: number; notes: string };
 export type LedgerEntry = {
-  id: string; store: StoreId; name: string; direction: "in" | "out";
-  kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste";
+  id: string; store: StoreId; name: string; beneficiary?: string; direction: "in" | "out";
+  kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste" | "distribuicao-lucro";
   amount: number; date: string; due: string; saleId?: string; cardFee?: number; nonCash?: boolean; canceled?: boolean; manual?: boolean;
   frequency?: "monthly" | "standalone";
   recurrence?: { months?: number; endedOn?: string; due: string };
@@ -258,7 +258,7 @@ export function saleNetProfit(sale: Sale) {
 
 export function financialReport(state: RetailState, from: string, to: string, store?: StoreId) {
   const includes = (date: string) => date >= from && date <= to;
-  const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, taxes: 0, fixed: 0, salary: 0, expenses: 0, other: 0, incoming: 0, outgoing: 0,
+  const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, taxes: 0, fixed: 0, salary: 0, expenses: 0, other: 0, distributions: 0, incoming: 0, outgoing: 0,
     payable: 0, receivable: 0, overdue: 0, missingSales: 0 };
   for (const sale of state.sales) {
     if (store && sale.store !== store) continue;
@@ -286,6 +286,7 @@ export function financialReport(state: RetailState, from: string, to: string, st
       if (entry.kind === "fixo") rows.fixed += entry.amount;
       if (entry.kind === "salario") rows.salary += entry.amount;
       if (entry.kind === "despesa") rows.expenses += entry.amount;
+      if (entry.kind === "distribuicao-lucro") rows.distributions += entry.amount;
       if (entry.kind === "outra-receita") rows.other += entry.amount;
     }
     if (entry.nonCash) continue;
@@ -303,6 +304,19 @@ export function financialReport(state: RetailState, from: string, to: string, st
   }
   return { ...rows, result: rows.revenue + rows.other - rows.cost - rows.commissions - rows.cardFees - rows.taxes - rows.fixed - rows.salary - rows.expenses,
     cash: rows.incoming - rows.outgoing };
+}
+
+export function recordProfitDistribution(state: RetailState, input: {
+  id: string; store: StoreId; beneficiary: string; amount: number; date: string;
+}) {
+  if (state.ledger.some((item) => item.id === input.id)) return;
+  if (!Number.isSafeInteger(input.amount) || input.amount <= 0 || !input.beneficiary.trim() || !isCalendarDate(input.date)) {
+    throw new RetailError("Informe o beneficiário, a data e um valor positivo.");
+  }
+  state.ledger.unshift({
+    ...input, name: "Distribuição de lucro · " + input.beneficiary, kind: "distribuicao-lucro", direction: "out", due: input.date,
+    settlements: [{ id: input.id + "-paid", amount: input.amount, date: input.date }],
+  });
 }
 
 export function salesRanking(state: RetailState, from: string, to: string, store?: StoreId, sellers = false) {

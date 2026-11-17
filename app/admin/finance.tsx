@@ -15,7 +15,7 @@ const shortDate = (date: string) => date ? date.split("-").reverse().join("/") :
 const totalOf = <T,>(rows: T[], value: (row: T) => number) => rows.reduce((sum, row) => sum + value(row), 0);
 const labels: Record<LedgerEntry["kind"], string> = {
   venda: "Venda", estoque: "Compra de estoque", consignacao: "Repasse consignado", comissao: "Comissão",
-  fixo: "Custo fixo", salario: "Salário", despesa: "Despesa", "outra-receita": "Outra receita", ajuste: "Ajuste de caixa",
+  fixo: "Custo fixo", salario: "Salário", despesa: "Despesa", "outra-receita": "Outra receita", ajuste: "Ajuste de caixa", "distribuicao-lucro": "Distribuição de lucro",
 };
 
 export function reportPeriod(from?: string, to?: string): Period {
@@ -210,6 +210,8 @@ export function Finance({ state, filter, period }: { state: RetailState; filter:
       <section className="panel"><div className="panel-title"><h2>DRE gerencial por competência</h2></div><dl className="finance-rows">
         {rows.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{money(value)}</dd></div>)}
         <div><dt><strong>Resultado {report.missingSales ? "parcial" : "gerencial"}</strong></dt><dd><strong>{money(report.result)}</strong></dd></div>
+        <div><dt>Distribuição de lucro</dt><dd>{money(-report.distributions)}</dd></div>
+        <div><dt><strong>Resultado após distribuição</strong></dt><dd><strong>{money(report.result - report.distributions)}</strong></dd></div>
       </dl>{report.missingSales > 0 && <p className="feedback error">{report.missingSales} venda(s) ou estorno(s) sem custo completo registrado neste período.</p>}</section>
       <section className="panel"><div className="panel-title"><h2>Fluxo de caixa por data da baixa</h2></div>
         <dl className="finance-rows"><div><dt>Entradas recebidas</dt><dd>{money(report.incoming)}</dd></div><div><dt>Saídas pagas</dt><dd>{money(report.outgoing)}</dd></div>

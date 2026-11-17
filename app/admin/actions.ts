@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColor,
+  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColor,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -66,6 +66,10 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
   const params = new URLSearchParams({ tab });
   const category = form.get("stockCategory");
   if (tab === "estoque" && productCategories.some((item) => item === category)) params.set("categoria", String(category));
+  if (tab === "catalogo") {
+    const page = form.get("catalogoPagina");
+    if (typeof page === "string" && /^\d{1,8}$/.test(page)) params.set("catalogoPagina", page);
+  }
   if (tab === "compromissos") {
     for (const key of ["tipoCompromisso", "prazoCompromisso", "compromissosVisao"]) {
       const filter = form.get(key);
@@ -514,6 +518,17 @@ export async function launchMonth(form: FormData) {
   await commit(form, "lojas", "Custos fixos e salários do mês lançados. Lançamentos existentes foram preservados.", (state) => {
     const month = value(form, "month", 7);
     postMonthlyCosts(state, choice(form, "store", storeIds(state)), month);
+  });
+}
+
+export async function saveProfitDistribution(form: FormData) {
+  await commit(form, "distribuicoes", "Distribuição de lucro registrada.", (state) => {
+    const id = value(form, "entryId", 36);
+    if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário.");
+    recordProfitDistribution(state, {
+      id, store: choice(form, "store", storeIds(state)), beneficiary: value(form, "beneficiary", 120),
+      amount: amount(form, "amount"), date: requiredDate(form, "date"),
+    });
   });
 }
 

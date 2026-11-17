@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, productColorAvailability, sellTradeInAsset, recordPurchase, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
+import { cancelPurchase, cancelSale, cardQuote, changeStock, classifyLegacyConsignment, emptyRetailState, financialReport, isCalendarDate, materializeCommitments, modelMarginRanking, recordCheckout, saleNetProfit, settleEntry, normalizeCpf, productColorAvailability, sellTradeInAsset, recordPurchase, recordProfitDistribution, recordSale, returnConsignedLot, stockComposition, tradeInAssets, transferStock, updateSaleCosts } from "../domain/retail.ts";
 import { localMongoConfig } from "../lib/mongo-config.ts";
 
 const date = "2026-11-07T12:00:00.000Z";
@@ -331,4 +331,17 @@ test("cor acompanha lote transferido, venda, disponibilidade e devolução ao es
   assert.equal(state.sales[0].lines[0].color, "Carbono");
   cancelSale(state, input.id, date, true);
   assert.deepEqual(availability(), [true, false]);
+});
+
+test("distribuição de lucro aparece por unidade e período, sem reduzir o resultado operacional", () => {
+  const state = fixture();
+  const input = { id: "dist", store: "palhoca", beneficiary: "Sócio", date: "2026-11-07", amount: 150000 };
+  recordProfitDistribution(state, input);
+  recordProfitDistribution(state, input);
+  const report = financialReport(state, "2026-11-01", "2026-11-30", "palhoca");
+  assert.equal(report.distributions, 150000);
+  assert.equal(report.cash, -150000);
+  assert.equal(report.result, 0);
+  assert.equal(financialReport(state, "2026-11-01", "2026-11-30", "sao-jose").distributions, 0);
+  assert.equal(financialReport(state, "2026-10-01", "2026-10-31").distributions, 0);
 });

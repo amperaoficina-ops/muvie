@@ -20,7 +20,7 @@ import {
   balanceDue, isCalendarDate, money, saleNetProfit, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem } from "./actions";
+import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -45,6 +45,7 @@ const nav = [
   { id: "fornecedores", label: "Fornecedores", icon: "users", description: "Cadastre os fornecedores usados nas compras." },
   { id: "funcionarios", label: "Funcionários", icon: "users", description: "Acompanhe equipe, remuneração, vendas do mês e vales por unidade." },
   { id: "compromissos", label: "Compromissos", icon: "bag", description: "Cadastre contas a pagar e a receber e acompanhe os compromissos em aberto." },
+  { id: "distribuicoes", label: "Distribuição de lucro", icon: "bag", description: "Registre o valor distribuído, o beneficiário e a unidade de origem." },
   { id: "financeiro", label: "Financeiro", icon: "grid", description: "Acompanhe DRE, caixa, contas a pagar e a receber por unidade.", admin: true },
   { id: "lojas", label: "Todas as lojas", icon: "pin", description: "Cadastre unidades e configure equipe, custos fixos e estrutura.", admin: true },
   { id: "crm", label: "Clientes / CRM", icon: "users", description: "Consulte fichas, histórico de compras e vendas, documentos e retornos por unidade." },
@@ -60,10 +61,11 @@ const nav = [
 type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
-  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "compromissos", "taxas", "impostos", "usuarios", "logs"] },
+  { title: "Gestão", tabs: ["funcionarios", "fornecedores", "bens", "financeiro", "distribuicoes", "compromissos", "taxas", "impostos", "usuarios", "logs"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
 const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
+  distribuicoes: { label: "Registrar distribuição", target: "nova-distribuicao" },
   taxas: { label: "Cadastrar maquininha", target: "nova-maquininha" },
   funcionarios: { label: "Cadastrar funcionário", target: "novo-funcionario" },
   fornecedores: { label: "Novo fornecedor", target: "novo-fornecedor" },
@@ -190,12 +192,13 @@ function Consignment({ state, filter, detailed = false, showPurchases = false }:
   </section>;
 }
 
-function CatalogSettings({ state, showProducts }: { state: RetailState; showProducts: boolean }) {
+function CatalogSettings({ state, showProducts, requestedPage }: { state: RetailState; showProducts: boolean; requestedPage?: string }) {
   const vehicles = state.products.filter((product) => product.category === "Scooter elétrica" || product.category === "Bicicleta elétrica");
+  const page = stockPage(vehicles.length, requestedPage);
   return <section className="panel">
     <div className="panel-title"><h2>Modelos no site</h2><Link className="back-link" href="/modelos">Ver catálogo público →</Link></div>
     {vehicles.length ? <Table headers={["Modelo", "Publicação", "Dados a completar", "Ações"]}>
-      {vehicles.map((product) => {
+      {vehicles.slice(page.start, page.start + stockPageSize).map((product) => {
         const missing = [
           ...(!productColorAvailability(product, state.stockLots).length ? ["Cores"] : []),
           ...(!product.imageUrl ? ["Foto"] : []), ...(!product.description?.trim() ? ["Descrição"] : []),
@@ -208,7 +211,7 @@ function CatalogSettings({ state, showProducts }: { state: RetailState; showProd
           <td><div className="inventory-tags">
             {missing.length ? missing.map((label) => <span className="pill" key={label}>{label}</span>) : <span className="pill green">Dados completos</span>}
           </div></td>
-          <td><div className="sale-statuses">
+          <td><div className="catalog-admin-actions">
             <DetailsDialog id={"preview-" + product.id} title="Prévia no catálogo" trigger="Ver prévia">
               <div className="sale-detail-content">
                 <div className="site" style={{ width: "100%", maxWidth: 430, marginInline: "auto" }}><ModelCard product={product} colors={productColorAvailability(product, state.stockLots)} /></div>
@@ -216,6 +219,7 @@ function CatalogSettings({ state, showProducts }: { state: RetailState; showProd
             </DetailsDialog>
             <form action={savePublication}>
               <input type="hidden" name="id" value={product.id} />
+              <input type="hidden" name="catalogoPagina" value={page.current} />
               {!product.published && <input type="hidden" name="published" value="on" />}
               {product.published ? <button type="submit" className="button">Despublicar</button> : <Submit>Publicar</Submit>}
             </form>
@@ -224,6 +228,7 @@ function CatalogSettings({ state, showProducts }: { state: RetailState; showProd
         </tr>;
       })}
     </Table> : <Empty>Cadastre um modelo em Produtos para publicar no site.</Empty>}
+    <StockPagination name="modelos do catálogo" page={page} href={(number) => adminUrl("catalogo") + "&catalogoPagina=" + number} />
   </section>;
 }
 
@@ -464,6 +469,32 @@ function CompanyAssets({ state, filter, showSales, invoices, focus, error, succe
           </DetailsDialog></td>
         </tr>)}
       </Table> : <Empty>Nenhum bem de estrutura nesta seleção.</Empty>}
+    </section>
+  </>;
+}
+
+function ProfitDistributions({ state, filter, error }: { state: RetailState; filter: Filter; error?: string }) {
+  const rows = state.ledger.filter((item) => item.kind === "distribuicao-lucro" && !item.canceled && (!filter || filter === item.store))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const entryId = randomUUID();
+  return <>
+    <CreateDialog id="nova-distribuicao" title="Registrar distribuição de lucro" reopen={Boolean(error)}>
+      {error && <p className="feedback error" role="alert">{error}</p>}
+      <form action={saveProfitDistribution} className="admin-form">
+        <FilterInput filter={filter} /><input type="hidden" name="entryId" value={entryId} />
+        <StoreField units={storeList(state)} filter={filter} label="Unidade de origem" />
+        <label>Quem recebeu<input name="beneficiary" required maxLength={120} /></label>
+        <label>Valor distribuído (R$)<input name="amount" required inputMode="decimal" maxLength={32} /></label>
+        <label>Data da distribuição<input name="date" type="date" required /></label>
+        <div className="span-two"><Submit>Registrar distribuição</Submit></div>
+      </form>
+    </CreateDialog>
+    <section className="panel">
+      <div className="panel-title"><h2>Distribuições registradas</h2></div>
+      {rows.length ? <Table headers={["Data", "Unidade de origem", "Quem recebeu", "Valor"]}>
+        {rows.map((item) => <tr key={item.id}><td>{calendarLabel(item.date)}</td><td>{storeName(item.store, state)}</td>
+          <td>{item.beneficiary}</td><td><strong>{money(item.amount)}</strong></td></tr>)}
+      </Table> : <Empty>Nenhuma distribuição registrada nesta seleção.</Empty>}
     </section>
   </>;
 }
@@ -864,7 +895,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; catalogoPagina?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -912,7 +943,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 
   const group = navGroups.find(({ tabs }) => tabs.includes(active.id))?.title ?? (active.id === "lojas" ? "Lojas" : undefined);
   const primary = moduleActions[active.id];
-  const actionBesideUnits = active.id === "crm" || active.id === "estoque" || active.id === "compras" || active.id === "funcionarios";
+  const actionBesideUnits = active.id === "crm" || active.id === "estoque" || active.id === "compras" || active.id === "funcionarios" || active.id === "distribuicoes";
   const shortcuts = [
     ["vendas", "Nova venda", "Registrar cliente, produtos e pagamento"],
     ["compras", "Registrar compra", "Lançar fornecedor e entrada de produtos"],
@@ -977,7 +1008,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}
           </>}
           {active.id === "produtos" && <Products category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
-          {active.id === "catalogo" && <CatalogSettings state={state} showProducts={canAccess(user, "produtos")} />}
+          {active.id === "catalogo" && <CatalogSettings requestedPage={params.catalogoPagina} state={state} showProducts={canAccess(user, "produtos")} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
@@ -986,6 +1017,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
+          {active.id === "distribuicoes" && <ProfitDistributions state={state} filter={filter} error={params.erro} />}
           {active.id === "bens" && <CompanyAssets state={state} filter={filter} showSales={showSales} invoices={invoices ?? []} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
