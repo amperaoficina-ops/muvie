@@ -272,6 +272,7 @@ body:has(.model-dialog[open]) { overflow: hidden; }
 .model-dialog-content dt, .model-dialog-content dd span, .model-dialog-note { color: #bdbdbd; }
 .model-dialog-content dd, .purchase-specs dd { text-align: right; font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
 .model-dialog-content .button { width: 100%; }
+.model-dialog-content a.button.yellow { color: #151613; }
 .model-dialog-note { font-size: .8rem; margin-top: .55rem; }
 .scooter-fields { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; padding: .8rem; border: 1px solid #d8d5cc; border-radius: .65rem; }
 .scooter-fields legend { padding: 0 .35rem; font-weight: 750; }
