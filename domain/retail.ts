@@ -24,7 +24,14 @@ export const paymentMethods = ["Pix", "Cartão", "Dinheiro", "Financiamento", "P
 export const productCategories = ["Scooter elétrica", "Acessório", "Peça"] as const;
 export type TaxRate = { id: string; name: string; basisPoints: number; defaultForSale: boolean };
 export type SaleTax = { amount: number; name: string; basisPoints?: number };
-export type CardRate = { id: string; name: string; mode: "Débito" | "Crédito"; installments: number; basisPoints: number };
+export type CardMachine = { id: string; name: string };
+export type CardRate = { machineId?: string; id: string; name: string; mode: "Débito" | "Crédito"; installments: number; basisPoints: number };
+export const legacyCardMachine = "sem-maquininha";
+export const rateMachineId = (rate: CardRate) => rate.machineId ?? legacyCardMachine;
+export function cardMachineOptions(machines: CardMachine[], rates: CardRate[]) {
+  return rates.some((rate) => !rate.machineId) ? [...machines, { id: legacyCardMachine, name: "Taxas anteriores" }] : machines;
+}
+
 export type AuditEvent = { id: string; actor: string; action: string; at: string };
 export type Testimonial = { id: string; author: string; quote: string };
 export type Product = {
@@ -68,6 +75,7 @@ export type Movement = {
 };
 export type RetailState = {
   suppliers: Supplier[];
+  cardMachines: CardMachine[];
   units?: Store[];
   taxRates?: TaxRate[];
   staffAdvances?: StaffAdvance[];
@@ -76,7 +84,7 @@ export type RetailState = {
   staff: Staff[]; fixedCosts: FixedCost[]; assets: Asset[]; ledger: LedgerEntry[]; stockLots: StockLot[];
 };
 export const emptyRetailState = (): RetailState => ({
-  suppliers: [], products: [], contacts: [], sales: [], movements: [], purchases: [], cardRates: [], audit: [], testimonials: [],
+  suppliers: [], cardMachines: [], products: [], contacts: [], sales: [], movements: [], purchases: [], cardRates: [], audit: [], testimonials: [],
   staff: [], fixedCosts: [], assets: [], ledger: [], stockLots: [],
 });
 export const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);

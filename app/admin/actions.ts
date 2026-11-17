@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, updateSaleCosts, updatePurchaseCost,
+  acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, recordCheckout, legacyCardMachine, rateMachineId, updateSaleCosts, updatePurchaseCost,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -65,6 +65,10 @@ async function runAction(form: FormData, tab: Tab, message: string, execute: (us
   const params = new URLSearchParams({ tab });
   const category = form.get("stockCategory");
   if (tab === "estoque" && productCategories.some((item) => item === category)) params.set("categoria", String(category));
+  if (tab === "taxas") {
+    const machine = form.get("machineId");
+    if (typeof machine === "string" && (uuidPattern.test(machine) || machine === legacyCardMachine)) params.set("maquininha", machine);
+  }
   if (tab === "estoque") {
     const view = form.get("stockView");
     const search = form.get("stockSearch");
@@ -133,6 +137,18 @@ export async function saveProduct(form: FormData) {
   }, true);
 }
 
+export async function saveCardMachine(form: FormData) {
+  const machineId = randomUUID();
+  form.set("machineId", machineId);
+  await commit(form, "taxas", "Maquininha cadastrada.", (state) => {
+    const name = value(form, "name", 70);
+    if (state.cardMachines.some((item) => item.name.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) {
+      throw new RetailError("Já existe uma maquininha com esse nome.");
+    }
+    state.cardMachines.push({ id: machineId, name });
+  });
+}
+
 export async function saveRate(form: FormData) {
   const newId = randomUUID();
   await commit(form, "taxas", "Taxa de cartão salva.", (state) => {
@@ -147,7 +163,10 @@ export async function saveRate(form: FormData) {
     value(form, "percent", 6);
     const basisPoints = amount(form, "percent");
     if (basisPoints >= 10000) throw new RetailError("Informe uma taxa inferior a 100%.");
-    const fields = { name: value(form, "name", 70), mode, installments, basisPoints };
+    const machine = value(form, "machineId", 36);
+    const legacy = machine === legacyCardMachine && current && !current.machineId;
+    if (!legacy && !state.cardMachines.some((item) => item.id === machine)) throw new RetailError("Selecione uma maquininha cadastrada.");
+    const fields = { name: value(form, "name", 70), mode, installments, basisPoints, machineId: legacy ? undefined : machine };
     if (current) Object.assign(current, fields);
     else state.cardRates.push({ id: newId, ...fields });
   });
@@ -256,6 +275,7 @@ export async function saveSale(form: FormData) {
       const assets = form.getAll("checkoutAsset");
       const amounts = form.getAll("checkoutAmount");
       const rates = form.getAll("checkoutRate");
+      const machines = form.getAll("checkoutMachine");
       const statuses = form.getAll("checkoutStatus");
       const dates = form.getAll("checkoutDue");
       const manualTax = form.get("taxMode") === "manual" ? value(form, "manualTax", 32) : undefined;
@@ -271,6 +291,9 @@ export async function saveSale(form: FormData) {
           const paid = parseReais(String(amounts[index] ?? ""));
           if (!matched || paid === null) throw new RetailError("Confira os pagamentos da venda.");
           if (methods.length === 1 && paid === 0) return [];
+          if (matched === "Cartão" && !state.cardRates.some((rate) => rate.id === rates[index] && rateMachineId(rate) === machines[index])) {
+            throw new RetailError("Selecione a maquininha e uma taxa cadastrada nela.");
+          }
           return [{ method: matched, amount: paid, assetDescription: matched === "Produto" ? String(assets[index] ?? "").trim().slice(0, 120) : undefined, rateId: String(rates[index] ?? ""),
             received: statuses[index] === "received", due: String(dates[index] ?? "") }];
         }),

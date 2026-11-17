@@ -2,7 +2,7 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 import { canAccess } from "@/domain/access";
 import { proposalQuote } from "@/domain/proposal";
-import { businessDate, money, storeList } from "@/domain/retail";
+import { businessDate, money, rateMachineId, storeList } from "@/domain/retail";
 import { getCurrentUser } from "@/lib/auth";
 import { readRetail } from "@/lib/retail-store";
 
@@ -19,11 +19,14 @@ export async function POST(request: Request) {
   const methods = fields("method");
   const amounts = fields("amount");
   const rates = fields("rate");
+  const machines = fields("machine");
   if (ids.length > 20 || methods.length > 10) return new Response("Proposta acima do limite de itens.", { status: 400 });
 
   const state = await readRetail();
   const store = storeList(state).find((unit) => unit.id === storeId);
-  const quote = store && proposalQuote(state.products, state.cardRates, store.id,
+  const validMachines = methods.every((method, index) => method !== "Cartão" ||
+    state.cardRates.some((rate) => rate.id === rates[index] && rateMachineId(rate) === machines[index]));
+  const quote = store && validMachines && proposalQuote(state.products, state.cardRates, store.id,
     ids.map((productId, index) => ({ productId, quantity: quantities[index] ?? "" })),
     methods.map((method, index) => ({ method, amount: amounts[index] ?? "", rateId: rates[index] ?? "" })),
     String(form.get("discount") ?? ""));

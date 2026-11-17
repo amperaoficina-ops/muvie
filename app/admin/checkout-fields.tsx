@@ -1,20 +1,21 @@
 "use client";
 
+import { CardPaymentFields } from "./card-payment-fields";
 import { SearchSelect } from "./search-select";
 import { useState } from "react";
-import { money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
+import { money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type CardMachine, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
 import { completePaymentAmounts, parseReais } from "@/domain/money-input";
 
 type Item = { key: number; productId: string; quantity: number; gift: boolean; origin: string; override?: string };
-type Payment = { assetDescription?: string; key: number; method: typeof paymentMethods[number]; value: string; rateId: string; received: boolean; due: string };
+type Payment = { assetDescription?: string; key: number; method: typeof paymentMethods[number]; value: string; rateId: string; machineId: string; received: boolean; due: string };
 type SaleProduct = Pick<Product, "id" | "name" | "sku" | "price" | "stock">;
 
-export function CheckoutFields({ units, initialStore, products, lots, rates, sellers, showCost, taxRates }: {
-  units: readonly Store[]; initialStore: string; products: SaleProduct[]; lots: StockLot[]; rates: CardRate[]; taxRates: TaxRate[]; sellers: { id: string; name: string; store: string; commissionBps: number }[]; showCost: boolean;
+export function CheckoutFields({ units, initialStore, products, lots, rates, machines, sellers, showCost, taxRates }: {
+  units: readonly Store[]; initialStore: string; products: SaleProduct[]; lots: StockLot[]; rates: CardRate[]; machines: CardMachine[]; taxRates: TaxRate[]; sellers: { id: string; name: string; store: string; commissionBps: number }[]; showCost: boolean;
 }) {
   const [store, setStore] = useState(initialStore);
   const [items, setItems] = useState<Item[]>([{ key: 0, productId: "", quantity: 1, gift: false, origin: "" }]);
-  const [payments, setPayments] = useState<Payment[]>([{ key: 0, method: "Pix", value: "", rateId: "", received: true, due: "" }]);
+  const [payments, setPayments] = useState<Payment[]>([{ key: 0, method: "Pix", value: "", rateId: "", machineId: "", received: true, due: "" }]);
   const [sellerId, setSeller] = useState("");
   const defaultTax = taxRates.find((rate) => rate.defaultForSale);
   const [taxMode, setTaxMode] = useState(defaultTax?.id ?? "");
@@ -96,8 +97,9 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
       {payments.map((payment, index) => <div className="checkout-row span-two" key={payment.key}>
         <label>Forma<SearchSelect name="checkoutMethod" value={payment.method} onChange={(event) => patchPayment(payment.key, { method: paymentMethods.find((item) => item === event.target.value) ?? "Pix" })}>{paymentMethods.map((method) => <option key={method}>{method}</option>)}</SearchSelect></label>
         <label>{index === payments.length - 1 ? "Saldo automático (R$)" : "Valor (R$)"}<input name="checkoutAmount" inputMode="decimal" readOnly={index === payments.length - 1} value={amounts[index]} required onChange={(event) => patchPayment(payment.key, { value: event.target.value })} /></label>
-        {payment.method === "Cartão" ? <label>Taxa da maquininha<SearchSelect name="checkoutRate" required value={payment.rateId} onChange={(event) => patchPayment(payment.key, { rateId: event.target.value })}>
-          <option value="">Selecione</option>{rates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {rate.mode} · {rate.installments}x · {rate.basisPoints / 100}%</option>)}</SearchSelect></label> : <input type="hidden" name="checkoutRate" value="" />}
+        {payment.method === "Cartão" ? <CardPaymentFields machines={machines} rates={rates} machineId={payment.machineId} rateId={payment.rateId}
+          names={{ machine: "checkoutMachine", rate: "checkoutRate" }} onChange={(machineId, rateId) => patchPayment(payment.key, { machineId, rateId })} />
+          : <><input type="hidden" name="checkoutMachine" value="" /><input type="hidden" name="checkoutRate" value="" /></>}
         {payment.method === "Produto" ? <label>Bem recebido na troca<input name="checkoutAsset" maxLength={120}
           placeholder="Ex.: scooter X13 usada, celular ou carro" value={payment.assetDescription ?? ""}
           onChange={(event) => patchPayment(payment.key, { assetDescription: event.target.value })} /></label>
@@ -107,7 +109,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
         {payment.received ? <input type="hidden" name="checkoutDue" value="" /> : <label>Vencimento<input name="checkoutDue" type="date" required value={payment.due} onChange={(event) => patchPayment(payment.key, { due: event.target.value })} /></label>}
         {index > 0 && <button type="button" className="button danger" onClick={() => setPayments(payments.filter((row) => row.key !== payment.key))}>Remover pagamento</button>}
       </div>)}
-      <button type="button" className="button" disabled={payments.length >= 12} onClick={() => setPayments([...payments, { key: Math.max(...payments.map((row) => row.key)) + 1, method: "Pix", value: "", rateId: "", received: true, due: "" }])}>＋ Adicionar pagamento</button>
+      <button type="button" className="button" disabled={payments.length >= 12} onClick={() => setPayments([...payments, { key: Math.max(...payments.map((row) => row.key)) + 1, method: "Pix", value: "", rateId: "", machineId: "", received: true, due: "" }])}>＋ Adicionar pagamento</button>
     </fieldset>
     <fieldset className="address-fields span-two checkout-group">
       <legend>Imposto da venda</legend>

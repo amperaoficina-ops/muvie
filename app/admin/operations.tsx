@@ -1,29 +1,62 @@
+import Link from "next/link";
+import { CreateDialog, DetailsDialog } from "./sale-dialog";
 import { SearchSelect } from "./search-select";
-import { money, storeList, type CardRate, type RetailState, type StoreId } from "@/domain/retail";
-import { saveRate, saveTestimonial, saveUser } from "./actions";
+import { money, storeList, cardMachineOptions, legacyCardMachine, rateMachineId, type CardMachine, type CardRate, type RetailState, type StoreId } from "@/domain/retail";
+import { saveCardMachine, saveRate, saveTestimonial, saveUser } from "./actions";
 import { Submit } from "./submit";
 import { isPrimaryAdmin, roles, type AccountAccess } from "@/domain/access";
 import { AccessFields } from "./access-fields";
 
-export function CardSettings({ state }: { state: RetailState }) {
-  return <div className="operation-grid">
-    <section className="panel"><div className="panel-title"><h2>Condições cadastradas</h2></div>
-      {state.cardRates.length ? <div className="editable-list">{state.cardRates.map((rate) => <details name="card-rate" key={rate.id}>
-        <summary><span><strong>{rate.name}</strong><small>{rate.mode} · {rate.installments}×</small></span><strong>{(rate.basisPoints / 100).toLocaleString("pt-BR")}%</strong></summary>
-        <RateForm rate={rate} />
-      </details>)}</div> : <p className="admin-empty">Cadastre uma condição para cada bandeira ou faixa de parcelas que você quiser simular.</p>}
-    </section>
-    <section className="panel"><div className="panel-title"><h2>Nova taxa de maquininha</h2></div><RateForm /></section>
-  </div>;
+export function CardSettings({ state, machineId, error }: { state: RetailState; machineId?: string; error?: string }) {
+  const machines = cardMachineOptions(state.cardMachines, state.cardRates);
+  const selected = machines.find((item) => item.id === machineId) ?? machines[0];
+  const rates = state.cardRates.filter((rate) => rateMachineId(rate) === selected?.id);
+  return <>
+    <div className="workspace-section-links">
+      <a className="button yellow" href="#nova-maquininha">＋ Cadastrar maquininha</a>
+    </div>
+    <CreateDialog id="nova-maquininha" title="Cadastrar maquininha" reopen={false}>
+      <form action={saveCardMachine} className="admin-form">
+        <label className="span-two">Nome<input name="name" required maxLength={70} placeholder="Ex.: Itaú, Rendimento ou InfinitePay" /></label>
+        <div className="span-two"><Submit>Cadastrar maquininha</Submit></div>
+      </form>
+    </CreateDialog>
+    {selected ? <>
+      <nav className="stock-category-filter" aria-label="Filtrar taxas por maquininha">
+        {machines.map((item) => <Link key={item.id} aria-current={item.id === selected.id ? "page" : undefined}
+          href={"/admin?tab=taxas&maquininha=" + encodeURIComponent(item.id)}>{item.name}</Link>)}
+      </nav>
+      <section className="panel">
+        <div className="panel-title"><h2>{selected.name}</h2>
+          {selected.id !== legacyCardMachine && <a className="button yellow" href="#nova-taxa">＋ Adicionar taxa</a>}
+        </div>
+        {selected.id !== legacyCardMachine && <CreateDialog id="nova-taxa" title={"Adicionar taxa · " + selected.name} reopen={false}>
+          <RateForm machine={selected} machines={machines} />
+        </CreateDialog>}
+        {rates.length ? <div className="table-wrap"><table>
+          <thead><tr>{["Condição", "Modalidade", "Parcelas", "Taxa", "Ação"].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <tbody>{rates.map((rate) => <tr key={rate.id}>
+            <td>{rate.name}</td><td>{rate.mode}</td><td>{rate.installments}×</td><td>{(rate.basisPoints / 100).toLocaleString("pt-BR")}%</td>
+            <td><DetailsDialog id={"taxa-" + rate.id} title={rate.name} trigger="Editar taxa">
+              <RateForm rate={rate} machine={selected} machines={machines} />
+            </DetailsDialog></td>
+          </tr>)}</tbody>
+        </table></div> : <p className="admin-empty">Nenhuma taxa cadastrada nesta maquininha.</p>}
+      </section>
+    </> : <p className="admin-empty">{error || "Cadastre uma maquininha para adicionar as condições de cartão."}</p>}
+  </>;
 }
 
-function RateForm({ rate }: { rate?: CardRate }) {
+function RateForm({ rate, machine, machines }: { rate?: CardRate; machine: CardMachine; machines: CardMachine[] }) {
   return <form className="admin-form" action={saveRate}>
     <input type="hidden" name="id" value={rate?.id ?? ""} />
-    <label className="span-two">Nome da condição<input name="name" defaultValue={rate?.name} maxLength={70} placeholder="Ex.: Maquininha A · Visa" required /></label>
+    {rate ? <label className="span-two">Maquininha<SearchSelect name="machineId" defaultValue={machine.id} required>
+      {machines.filter((item) => item.id !== legacyCardMachine || machine.id === item.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+    </SearchSelect></label> : <input type="hidden" name="machineId" value={machine.id} />}
+    <label className="span-two">Nome da condição<input name="name" defaultValue={rate?.name} maxLength={70} placeholder="Ex.: Visa em até 10×" required /></label>
     <label>Modalidade<SearchSelect name="mode" defaultValue={rate?.mode ?? "Crédito"}><option>Crédito</option><option>Débito</option></SearchSelect></label>
     <label>Parcelas<input name="installments" type="number" min="1" max="24" defaultValue={rate?.installments ?? 1} required /></label>
-    <label>Taxa total (%)<input name="percent" type="number" min="0" max="99.99" step=".01" defaultValue={rate ? rate.basisPoints / 100 : ""} required /></label>
+    <label>Taxa total (%)<input name="percent" inputMode="decimal" defaultValue={rate ? rate.basisPoints / 100 : ""} required /></label>
     <div className="span-two"><Submit>Salvar taxa</Submit></div>
   </form>;
 }
