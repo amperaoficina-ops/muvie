@@ -609,19 +609,30 @@ function Stock({ state, filter, category, showPurchases, showCost, movementPage,
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
   const movements = state.movements.filter((movement) => (!(category || query) || ids.has(movement.productId)) && (!filter || movement.store === filter));
   const lots = state.stockLots.filter((item) => item.quantity > 0 && (!(category || query) || ids.has(item.productId)) && (!filter || item.store === filter));
-  const { invested, consigned, tracked } = lots.reduce((totals, lot) => {
+  const tracked = new Map<string, Map<string, number>>();
+  const { invested, consigned } = lots.reduce((totals, lot) => {
     totals[lot.consigned ? "consigned" : "invested"] += lot.quantity * lot.unitCost;
-    totals.tracked += lot.quantity;
+    const byStore = tracked.get(lot.productId) ?? new Map<string, number>();
+    byStore.set(lot.store, (byStore.get(lot.store) ?? 0) + lot.quantity);
+    tracked.set(lot.productId, byStore);
     return totals;
-  }, { invested: 0, consigned: 0, tracked: 0 });
+  }, { invested: 0, consigned: 0 });
   const position = products.reduce((totals, product) => {
-    const quantity = columns.reduce((sum, store) => sum + (product.stock[store.id] ?? 0), 0);
-    totals.quantity += quantity;
-    totals.retail += quantity * product.price;
-    if (!product.price) totals.unpriced += quantity;
+    const byStore = tracked.get(product.id);
+    for (const store of columns) {
+      const quantity = product.stock[store.id] ?? 0;
+      const untracked = Math.max(0, quantity - (byStore?.get(store.id) ?? 0));
+      totals.retail += quantity * product.price;
+      if (!product.price) totals.unpriced += quantity;
+      if (product.purchaseCost && product.purchaseCost > 0) {
+        totals.estimatedCost += untracked * product.purchaseCost;
+        totals.estimatedUnits += untracked;
+      } else {
+        totals.uncosted += untracked;
+      }
+    }
     return totals;
-  }, { quantity: 0, retail: 0, unpriced: 0 });
-  const untracked = Math.max(0, position.quantity - tracked);
+  }, { retail: 0, unpriced: 0, estimatedCost: 0, estimatedUnits: 0, uncosted: 0 });
   const colorsByStore = productColorStock(lots);
   const balances = stockPage(products.length, balancePage);
   const stockLots = stockPage(lots.length, lotPage);
@@ -643,12 +654,13 @@ function Stock({ state, filter, category, showPurchases, showCost, movementPage,
   return <>
     <div className="metrics-grid" aria-label="Valores do estoque">
       {showCost && <>
-        <article className="panel metric"><span>Valor total do estoque</span><strong>{money(invested + consigned)}</strong>
-          <small>{untracked ? `${untracked} un. sem custo de lote` : "Custo registrado dos lotes em saldo"}</small></article>
+        <article className="panel metric"><span>Valor total do estoque</span><strong>{money(invested + consigned + position.estimatedCost)}</strong>
+          <small>{position.uncosted ? `${position.uncosted} un. sem custo cadastrado` : "Custo do estoque próprio e de repasse"}</small></article>
         <article className="panel metric"><span>Valor total consignado</span><strong>{money(consigned)}</strong>
           <small>Custo de repasse das unidades em saldo</small></article>
-        <article className="panel metric"><span>Valor total investido</span><strong>{money(invested)}</strong>
-          <small>Custo de compra do estoque próprio em saldo</small></article>
+        <article className="panel metric"><span>Valor total investido</span><strong>{money(invested + position.estimatedCost)}</strong>
+          <small>{position.estimatedUnits ? `${position.estimatedUnits} un. estimadas pelo custo cadastrado no produto` : "Custo de compra do estoque próprio em saldo"}</small>
+          {position.uncosted > 0 && <small>{position.uncosted} un. sem custo cadastrado</small>}</article>
       </>}
       <article className="panel metric"><span>Valor estimado de venda</span><strong>{money(position.retail)}</strong>
         <small>{position.unpriced ? `${position.unpriced} un. sem preço de venda` : "Saldo ao preço cheio de venda"}</small></article>
