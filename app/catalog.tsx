@@ -12,19 +12,22 @@ export async function readCatalog() {
   return { products: products.map((product) => ({ ...product, publicColors: productColorAvailability(product, state?.stockLots ?? []) })), testimonials: state?.testimonials ?? [] };
 }
 
-export function SiteHeader() {
+export function SiteHeader({ landing = false }: { landing?: boolean }) {
   return <header className="site-header"><div className="site-wrap site-nav">
     <Brand />
-    <nav aria-label="Navegação principal"><Link href="/modelos">Modelos</Link><Link href="/#lojas">Lojas</Link></nav>
-    <a className="button outline" href={instagram} target="_blank" rel="noreferrer">Fale com a loja <Icon name="external" size={16} /></a>
+    <nav aria-label="Navegação principal"><Link href={landing ? "#modelos" : "/modelos"}>Modelos</Link><Link href={landing ? "#lojas" : "/#lojas"}>Lojas</Link></nav>
+    {landing ? <a className="button outline" href="#contato">Contato</a>
+      : <a className="button outline" href={instagram} target="_blank" rel="noreferrer">Fale com a loja <Icon name="external" size={16} /></a>}
   </div></header>;
 }
+
+export const storeMapUrl = (name: string) => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent("MUVI-E " + name + " SC");
 
 export function SiteFooter() {
   const cnpj = process.env.MUVIE_PUBLIC_CNPJ;
   const email = process.env.MUVIE_PUBLIC_EMAIL;
   const whatsapp = process.env.MUVIE_PUBLIC_WHATSAPP?.replace(/\D/g, "");
-  return <footer className="public-footer">
+  return <footer id="contato" className="public-footer">
     <div className="site-wrap">
       <div className="public-footer-grid">
         <div><Brand /><p>Scooters elétricas na Grande Florianópolis.</p></div>
@@ -38,7 +41,7 @@ export function SiteFooter() {
         </div>
         <div><h2>Localização</h2>
           {stores.map((store) => <a key={store.id} target="_blank" rel="noreferrer"
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("MUVI-E " + store.name + " SC")}`}>
+            href={storeMapUrl(store.name)}>
             <Icon name="pin" size={16} /> {store.name}, SC <Icon name="external" size={14} />
           </a>)}
         </div>
