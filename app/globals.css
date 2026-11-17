@@ -32,7 +32,17 @@ h1, h2, h3, p, figure { margin: 0; }
 .text-link { display: inline-flex; width: fit-content; align-items: center; gap: .35rem; font-weight: 700; font-size: .87rem; }
 .text-link:hover, .back-link:hover { text-decoration: underline; text-underline-offset: .23em; }
 
+@font-face {
+  font-family: Montserrat;
+  src: url("/fonts/montserrat-latin.woff") format("woff");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 /* Loja */
+.site { font-family: Montserrat, Arial, sans-serif; }
+.site .eyebrow { font-family: inherit; }
 .site { background: var(--dark); color: #f5f5eb; }
 .landing-page, .landing-page .signal-bar, .landing-page .stores-band { background: #000; }
 .site-wrap { width: min(100% - 80px, 1320px); margin-inline: auto; }
