@@ -1,56 +1,99 @@
 "use client";
 
 import { useState } from "react";
-import { cardQuote, money, type Store, type CardRate, type Product, type StoreId } from "@/domain/retail";
+import { money, paymentMethods, percentageAmount, type Store, type CardRate, type TaxRate } from "@/domain/retail";
+import { parseReais } from "@/domain/money-input";
+import { proposalQuote, type ProposalProduct } from "@/domain/proposal";
 
-type StockProduct = Pick<Product, "id" | "name" | "sku" | "price" | "stock">;
-
-export function Simulator({ products, rates, initialStore, stores }: { products: StockProduct[]; rates: CardRate[]; initialStore: StoreId; stores: readonly Store[] }) {
+export function Simulator({ products, rates, initialStore, stores, taxRates, showFinance }: {
+  products: ProposalProduct[]; rates: CardRate[]; initialStore: string; stores: readonly Store[];
+  taxRates: TaxRate[]; showFinance: boolean;
+}) {
   const [store, setStore] = useState(initialStore);
-  const [productId, setProductId] = useState("");
-  const [rateId, setRateId] = useState("");
-  const [quantityText, setQuantity] = useState("1");
-  const [discountText, setDiscount] = useState("");
+  const [items, setItems] = useState([{ productId: "", quantity: "1" }]);
+  const [payments, setPayments] = useState([{ method: "Pix", amount: "", rateId: rates[0]?.id ?? "" }]);
+  const [discount, setDiscount] = useState("");
+  const [customer, setCustomer] = useState("");
+  const [taxMode, setTaxMode] = useState("");
+  const [manualTax, setManualTax] = useState("");
   const available = products.filter((item) => item.stock[store] > 0 && item.price > 0);
-  const product = available.find((item) => item.id === productId) ?? available[0];
-  const rate = rates.find((item) => item.id === rateId) ?? rates[0];
-  const quantity = Number(quantityText);
-  const discount = Math.round(Number(discountText.replace(",", ".")) * 100);
-  const subtotal = (product?.price ?? 0) * quantity;
-  const gross = subtotal - discount;
-  const valid = product && Number.isInteger(quantity) && quantity > 0 && quantity <= product.stock[store]
-    && Number.isSafeInteger(subtotal) && Number.isSafeInteger(discount) && discount >= 0 && gross > 0;
-  const quote = valid && rate ? cardQuote(gross, rate) : null;
+  const base = proposalQuote(products, rates, store, items, [{ method: "Pix", amount: "", rateId: "" }], discount);
+  const entered = payments.reduce((sum, payment) => sum + (parseReais(payment.amount) ?? 0), 0);
+  const difference = base ? base.total - entered : 0;
+  const quote = proposalQuote(products, rates, store, items, payments, discount);
+  const rate = taxRates.find((item) => item.id === taxMode) ?? taxRates.find((item) => item.defaultForSale);
+  const tax = taxMode === "manual" ? parseReais(manualTax) : percentageAmount(quote?.total ?? 0, rate?.basisPoints ?? 0);
 
   return <div className="operation-grid">
     <section className="panel">
-      <div className="panel-title"><h2>Monte a proposta</h2><span className="pill">SIMULAÇÃO</span></div>
+      <div className="panel-title"><h2>Monte a proposta</h2></div>
       <div className="admin-form">
-        <label>Unidade<select value={store} onChange={(event) => { setStore(event.target.value as StoreId); setProductId(""); setQuantity("1"); }}>
+        <label>Unidade<select value={store} onChange={(event) => { setStore(event.target.value); setItems([{ productId: "", quantity: "1" }]); }}>
           {stores.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
         </select></label>
-        <label>Produto em estoque<select value={product?.id ?? ""} onChange={(event) => { setProductId(event.target.value); setQuantity("1"); }}>
-          {!available.length && <option value="">Sem produtos disponíveis</option>}
-          {available.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.stock[store]} un.</option>)}
-        </select></label>
-        <label>Quantidade<input type="number" min="1" max={product?.stock[store]} value={quantityText} onChange={(event) => setQuantity(event.target.value)} /></label>
-        <label>Desconto (R$)<input inputMode="decimal" value={discountText} placeholder="0,00" onChange={(event) => setDiscount(event.target.value)} /></label>
-        <label className="span-two">Condição de cartão<select value={rate?.id ?? ""} onChange={(event) => setRateId(event.target.value)}>
-          {!rates.length && <option value="">Nenhuma taxa cadastrada</option>}
-          {rates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.mode} {item.installments}× · {(item.basisPoints / 100).toLocaleString("pt-BR")}%</option>)}
-        </select></label>
+        <label>Nome do cliente (opcional)<input value={customer} maxLength={100} onChange={(event) => setCustomer(event.target.value)} /></label>
+        <fieldset className="checkout-group span-two"><legend>Produtos</legend>
+          {items.map((item, index) => <div className="admin-form" key={index}>
+            <label>Produto <select value={item.productId} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, productId: event.target.value } : row))}>
+              <option value="">{available.length ? "Selecione um produto" : "Sem produtos disponíveis"}</option>
+              {available.map((row) => <option value={row.id} key={row.id}>{row.name} · {money(row.price)} · {row.stock[store]} un.</option>)}
+            </select></label>
+            <label>Quantidade<input type="number" min="1" value={item.quantity} onChange={(event) => setItems(items.map((row, i) => i === index ? { ...row, quantity: event.target.value } : row))} /></label>
+            {items.length > 1 && <button type="button" className="button" onClick={() => setItems(items.filter((_, i) => i !== index))}>Remover produto</button>}
+          </div>)}
+          <button type="button" className="button" disabled={items.length >= 20} onClick={() => setItems([...items, { productId: "", quantity: "1" }])}>Adicionar produto</button>
+        </fieldset>
+        <label>Desconto (R$)<input value={discount} inputMode="decimal" placeholder="0,00" onChange={(event) => setDiscount(event.target.value)} /></label>
+        <fieldset className="checkout-group span-two"><legend>Pagamento</legend>
+          {payments.map((payment, index) => <div className="admin-form" key={index}>
+            <label>Forma de pagamento<select value={payment.method} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, method: event.target.value } : row))}>
+              {paymentMethods.map((method) => <option key={method}>{method}</option>)}
+            </select></label>
+            {payments.length > 1 && <label>Valor (R$)<input value={payment.amount} inputMode="decimal" onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, amount: event.target.value } : row))} /></label>}
+            {payment.method === "Cartão" && <label>Condição de cartão<select value={payment.rateId} onChange={(event) => setPayments(payments.map((row, i) => i === index ? { ...row, rateId: event.target.value } : row))}>
+              {!rates.length && <option value="">Nenhuma taxa cadastrada</option>}
+              {rates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.mode} · {item.installments}×</option>)}
+            </select></label>}
+            {payments.length > 1 && <button type="button" className="button" onClick={() => setPayments(payments.filter((_, i) => i !== index))}>Remover pagamento</button>}
+          </div>)}
+          {base && payments.length > 1 && <p className="form-note">
+            {difference === 0 ? "Valores somam o total da proposta." : difference > 0
+              ? "Falta distribuir " + money(difference) : "Os pagamentos excedem o total em " + money(-difference)}
+          </p>}
+          <button type="button" className="button" disabled={payments.length >= 10} onClick={() => setPayments([...payments, { method: "Pix", amount: "", rateId: rates[0]?.id ?? "" }])}>Combinar pagamento</button>
+        </fieldset>
+        {showFinance && <>
+          <label>Imposto<select value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
+            <option value="">Padrão da venda</option>
+            {taxRates.map((item) => <option value={item.id} key={item.id}>{item.name} · {item.basisPoints / 100}%</option>)}
+            <option value="manual">Valor manual</option>
+          </select></label>
+          {taxMode === "manual" && <label>Imposto (R$)<input inputMode="decimal" value={manualTax} onChange={(event) => setManualTax(event.target.value)} /></label>}
+        </>}
       </div>
     </section>
-    <section className="panel quote-result" aria-live="polite">
+    <section className="panel quote-result">
       <div className="panel-title"><h2>Resumo para atendimento</h2></div>
-      {quote && rate ? <div className="quote-body">
-        <span>Total para o cliente</span><strong>{money(gross)}</strong>
-        <p>{rate.installments === 1 ? "Pagamento em 1×" : quote.remainder === 0
-          ? `${rate.installments}× de ${money(quote.installment)}`
-          : `${rate.installments - quote.remainder}× de ${money(quote.installment)} + ${quote.remainder}× de ${money(quote.installment + 1)}`}</p>
-        <dl><div><dt>Taxa estimada</dt><dd>{money(quote.fee)}</dd></div><div><dt>Líquido estimado da loja</dt><dd>{money(quote.net)}</dd></div></dl>
-        <small>Simulação sem baixa no estoque. Considera a taxa informada, sem custos adicionais de antecipação.</small>
-      </div> : <p className="admin-empty">{!product ? "Cadastre um preço e adicione saldo na unidade para simular." : !valid ? "Confira a quantidade disponível e o desconto." : "Cadastre uma taxa de cartão para calcular a proposta."}</p>}
+      {quote ? <div className="quote-body">
+        <span>Total para o cliente</span><strong>{money(quote.total)}</strong>
+        {quote.discount > 0 && <p>Desconto de {money(quote.discount)} incluído</p>}
+        <dl>{quote.payments.map((payment, index) => <div key={index}>
+          <dt>{payment.method}{payment.installments && <small>{payment.installments}</small>}</dt><dd>{money(payment.amount)}</dd>
+        </div>)}</dl>
+        <form action="/admin/simulador/proposta" method="post">
+          <input type="hidden" name="store" value={store} /><input type="hidden" name="customer" value={customer} />
+          <input type="hidden" name="discount" value={discount} />
+          {items.map((item, index) => <div key={index}><input type="hidden" name="product" value={item.productId} /><input type="hidden" name="quantity" value={item.quantity} /></div>)}
+          {payments.map((payment, index) => <div key={index}><input type="hidden" name="method" value={payment.method} /><input type="hidden" name="amount" value={payment.amount} /><input type="hidden" name="rate" value={payment.rateId} /></div>)}
+          <button type="submit" className="button yellow">Baixar PDF da proposta</button>
+        </form>
+        {showFinance && <dl>
+          <div><dt>Taxa de cartão</dt><dd>{money(quote.fees)}</dd></div>
+          <div><dt>Imposto estimado</dt><dd>{tax == null || tax > quote.total ? "Confira o valor" : money(tax)}</dd></div>
+          {tax != null && tax <= quote.total && <div><dt>Líquido após taxas e imposto</dt><dd>{money(quote.total - quote.fees - tax)}</dd></div>}
+        </dl>}
+        <small>Simulação sem reserva de estoque.</small>
+      </div> : <p className="admin-empty">Selecione os produtos e confira as quantidades, o desconto e os pagamentos. Ao combinar formas, a soma deve bater com o total da proposta.</p>}
     </section>
   </div>;
 }
