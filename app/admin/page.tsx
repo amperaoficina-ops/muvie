@@ -118,7 +118,7 @@ function InvoiceBox({ owner, id, filter, invoices }: { owner: InvoiceOwner; id: 
 
 function Overview({ state, filter, showSales }: { state: RetailState; filter: Filter; showSales: boolean }) {
   const sales = state.sales.filter((sale) => !sale.canceledAt && (!filter || sale.store === filter));
-  const contacts = state.contacts.filter((contact) => (!filter || contact.store === filter) && !["Ganho", "Perdido"].includes(contact.stage));
+  const contacts = state.contacts.filter((contact) => !filter || contact.store === filter);
   const stock = (store: StoreId) => state.products.reduce((total, product) => total + (product.stock[store] ?? 0), 0);
   const metrics = [
     { label: "Vendas registradas", value: sales.length, detail: "Vendas ativas no histórico", icon: "bag" },
@@ -206,7 +206,7 @@ function CatalogSettings({ state }: { state: RetailState }) {
 
 function ProductForm({ filter, product }: { filter: Filter; product?: Product }) {
   return <form className="admin-form" action={saveProduct}>
-    <FilterInput filter={filter} />{product && <input type="hidden" name="id" value={product.id} />}
+    <FilterInput filter={filter} />{product && <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="focus" value={product.id} /></>}
     <label>Nome<input name="name" required maxLength={100} defaultValue={product?.name} placeholder="Nome comercial" /></label>
     <label>SKU<input name="sku" required maxLength={40} defaultValue={product?.sku} placeholder="Código do produto" /></label>
     <ProductCategoryFields product={product && { category: product.category, specs: product.specs }} />
@@ -229,15 +229,30 @@ function matchesSearch(query: string, ...fields: string[]) {
   return !query || searchText(fields.join(" ")).includes(searchText(query));
 }
 
-function Products({ products, filter, query }: { products: Product[]; filter: Filter; query: string }) {
-  return <div className="operation-grid"><section className="panel">
-    <div className="panel-title"><h2>Produtos cadastrados</h2><span className="pill">{products.length} no catálogo</span></div>
-    {products.length ? <div className="editable-list">{products.map((product) => <details name="product-record" key={product.id}>
-      <summary><span><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></span><span className="pill">{product.published ? "Na landing" : "Interno"}</span><strong>{money(product.price)}</strong></summary>
-      <ProductForm product={product} filter={filter} />
-      <div className="record-actions"><Link className="back-link" href={adminUrl("compras", filter) + "&produto=" + product.id}>Registrar compra deste produto →</Link></div>
-    </details>)}</div> : <Empty>{query ? "Nenhum produto encontrado." : "Cadastre seu primeiro produto para liberar movimentações e vendas."}</Empty>}
-  </section><section id="novo-produto" className="panel"><div className="panel-title"><h2>Novo produto</h2></div><ProductForm filter={filter} /></section></div>;
+function Products({ products, filter, query, focus, error }: { products: Product[]; filter: Filter; query: string; focus?: string; error?: string }) {
+  return <>
+    <CreateDialog id="novo-produto" title="Novo produto" reopen={Boolean(error && !focus)}>
+      {error && !focus && <p className="feedback error" role="alert">{error}</p>}
+      <ProductForm filter={filter} />
+    </CreateDialog>
+    <section className="panel">
+      <div className="panel-title"><h2>Produtos cadastrados</h2><span className="pill">{products.length} produto(s)</span></div>
+      {products.length ? <Table headers={["Produto", "Categoria", "Preço de venda", "Status", "Ação"]}>
+        {products.map((product) => <tr key={product.id}>
+          <td><strong>{product.name}</strong><small>{product.sku}</small></td>
+          <td>{product.category}</td><td>{money(product.price)}</td>
+          <td><span className="pill">{product.published ? "Na landing" : "Interno"}</span></td>
+          <td><DetailsDialog id={"produto-" + product.id} title={product.name} trigger="Editar detalhes" reopen={focus === product.id}>
+            <div className="sale-detail-content">
+              {error && focus === product.id && <p className="feedback error" role="alert">{error}</p>}
+              <ProductForm product={product} filter={filter} />
+              <div className="record-actions"><Link className="back-link" href={adminUrl("compras", filter) + "&produto=" + product.id}>Registrar compra deste produto →</Link></div>
+            </div>
+          </DetailsDialog></td>
+        </tr>)}
+      </Table> : <Empty>{query ? "Nenhum produto encontrado." : "Cadastre seu primeiro produto para liberar movimentações e vendas."}</Empty>}
+    </section>
+  </>;
 }
 
 function Purchases({ state, filter, invoices, focus, productId, query }: {
@@ -579,10 +594,10 @@ function ContactForm({ filter, contact, state }: { filter: Filter; contact?: Con
   </form>;
 }
 
-function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, error, success }: {
-  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; showSales: boolean; showPurchases: boolean; stage?: string; error?: string; success?: string;
+function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, error, success, query }: {
+  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; showSales: boolean; showPurchases: boolean; stage?: string; error?: string; success?: string; query: string;
 }) {
-  const list = state.contacts.filter((contact) => !filter || contact.store === filter);
+  const list = state.contacts.filter((contact) => (!filter || contact.store === filter) && matchesSearch(query, contact.name, contact.cpf ?? "", contact.phone ?? "", contact.email ?? ""));
   const selected = stages.find((item) => item === stage);
   const visible = selected ? list.filter((item) => item.stage === selected) : list;
   return <>
@@ -592,11 +607,12 @@ function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, 
     </CreateDialog>
     <nav className="dashboard-values sale-filters" aria-label="Filtrar clientes por etapa">
       {[{ label: "Todos", value: "" }, ...stages.map((item) => ({ label: item, value: item }))].map(({ label, value }) =>
-        <Link key={label} href={adminUrl("crm", filter) + (value ? "&etapa=" + encodeURIComponent(value) : "")}
+        <Link key={label} href={adminUrl("crm", filter) + (value ? "&etapa=" + encodeURIComponent(value) : "") + (query ? "&" + new URLSearchParams({ busca: query }) : "")}
           aria-current={(selected ?? "") === value ? "true" : undefined}>
           <span>{label}</span><strong>{value ? list.filter((item) => item.stage === value).length : list.length}</strong>
         </Link>)}
     </nav>
+    <RecordSearch key={filter + ":" + (selected ?? "")} tab="crm" store={filter} stage={selected} query={query} />
     <section className="panel"><div className="panel-title"><h2>Clientes e oportunidades</h2></div>
       {visible.length ? <Table headers={["Cliente", "Unidade", "Interesse", "Próximo retorno", "Status", "Ação"]}>
         {visible.map((contact) => <tr key={contact.id}>
@@ -618,7 +634,7 @@ function CRM({ state, filter, invoices, focus, showSales, showPurchases, stage, 
             </div>
           </DetailsDialog></td>
         </tr>)}
-      </Table> : <Empty>{selected ? "Nenhum cliente nesta etapa." : "Adicione um contato para acompanhar a próxima conversa ou proposta."}</Empty>}
+      </Table> : <Empty>{query ? "Nenhum cliente encontrado." : selected ? "Nenhum cliente nesta etapa." : "Adicione um contato para acompanhar a próxima conversa ou proposta."}</Empty>}
     </section>
   </>;
 }
@@ -670,7 +686,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const units = storeList(state ?? undefined);
   const category = productCategories.find((item) => item === params.categoria);
   const categoryQuery = active.id === "estoque" && category ? "&" + new URLSearchParams({ categoria: category }) : "";
-  const supportsSearch = ["estoque", "compras", "produtos"].includes(active.id);
+  const supportsSearch = ["estoque", "compras", "produtos", "crm"].includes(active.id);
   const query = supportsSearch && typeof params.busca === "string" ? params.busca.trim().slice(0, 100) : "";
   const searchQuery = query ? "&" + new URLSearchParams({ busca: query }) : "";
   const heading = active.id === "lojas" && filter ? "Unidade " + storeName(filter, state ?? undefined) : active.label;
@@ -709,7 +725,10 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
-          {!denied && state && primary && active.id !== "crm" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
+          {!denied && state && primary && active.id !== "crm" && active.id !== "produtos" && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
+          {!denied && state && active.id === "produtos" && primary && <div className="admin-filter-bar">
+            <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>
+          </div>}
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
           {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <div className={"admin-filter-bar" + (active.id === "crm" ? " crm-filter-bar" : "")}>
             {active.id === "crm" && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
@@ -718,7 +737,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
         </div>
-        {!denied && state && supportsSearch && active.id !== "estoque" && <RecordSearch key={active.id + ":" + filter + ":" + (category ?? "")}
+        {!denied && state && supportsSearch && active.id !== "estoque" && active.id !== "crm" && <RecordSearch key={active.id + ":" + filter + ":" + (category ?? "")}
           tab={active.id} store={filter} query={query} />}
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
@@ -736,7 +755,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {(canAccess(user, "estoque") || canAccess(user, "consignados")) && <InventoryOverview state={state} filter={filter} showCost={canAccess(user, "financeiro") || showPurchases} />}
             {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}
           </>}
-          {active.id === "produtos" && <Products query={query} products={state.products.filter((item) => matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
+          {active.id === "produtos" && <Products focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings state={state} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <>
@@ -752,7 +771,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "lojas" && <StoresPanel state={state} filter={filter} showSales={showSales} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} />}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
-          {active.id === "crm" && <CRM stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
+          {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates} taxRates={state.taxRates ?? []} showFinance={canAccess(user, "financeiro")}
             lots={canAccess(user, "financeiro") ? state.stockLots.map(({ productId, store, date, quantity, unitCost }) => ({ productId, store, date, quantity, unitCost })) : []}
             sellers={canAccess(user, "financeiro") ? state.staff.filter((seller) => seller.active).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps })) : []}

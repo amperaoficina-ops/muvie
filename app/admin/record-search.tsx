@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function RecordSearch({ tab, store, category, query }: { tab: string; store: string; category?: string; query: string }) {
+export function RecordSearch({ tab, store, category, stage, query }: { tab: string; store: string; category?: string; stage?: string; query: string }) {
   const router = useRouter();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [value, setValue] = useState(query);
@@ -15,6 +15,7 @@ export function RecordSearch({ tab, store, category, query }: { tab: string; sto
     const params = new URLSearchParams({ tab });
     if (store) params.set("loja", store);
     if (category) params.set("categoria", category);
+    if (stage) params.set("etapa", stage);
     if (text.trim()) params.set("busca", text.trim());
     timer.current = setTimeout(() => router.replace("/admin?" + params, { scroll: false }), delay);
   }
@@ -22,7 +23,7 @@ export function RecordSearch({ tab, store, category, query }: { tab: string; sto
   return <form className="workspace-section-links admin-record-search" role="search"
     onSubmit={(event) => { event.preventDefault(); search(value); }}>
     <input type="search" maxLength={100} value={value} onChange={(event) => search(event.target.value, 300)}
-      aria-label="Pesquisar registros" placeholder={tab === "compras" ? "Produto, SKU ou fornecedor" : "Produto, SKU ou categoria"} />
+      aria-label="Pesquisar registros" placeholder={tab === "crm" ? "Nome, CPF, telefone ou e-mail" : tab === "compras" ? "Produto, SKU ou fornecedor" : "Produto, SKU ou categoria"} />
     {value && <button className="button" type="button" onClick={() => search("")}>Limpar busca</button>}
   </form>;
 }
