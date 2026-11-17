@@ -367,7 +367,8 @@ export function Commitments({ state, filter, createError, kind, deadline, view, 
                     </DetailsDialog>}
                 </div>
               </DetailsDialog>
-              {!paid && <DetailsDialog id={"baixa-" + entry.id} title="Registrar baixa" trigger="Registrar baixa">
+              {!paid && entry.cardReconciliation && <small>Baixa em Caixa → Conciliação de cartão</small>}
+              {!paid && !entry.cardReconciliation && <DetailsDialog id={"baixa-" + entry.id} title="Registrar baixa" trigger="Registrar baixa">
                 <LedgerForm entry={entry} filter={filter} mode="pay" filters={filters} />
               </DetailsDialog>}
             </div></td>

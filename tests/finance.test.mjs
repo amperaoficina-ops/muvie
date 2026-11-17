@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  submitStoreSale, reviewStoreSale, correctHistoricalPayments, historicalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, balanceDue, cancelSale, emptyRetailState, financialReport, postMonthlyCosts, recordPurchase,
+  cardReceivables, reconcileCardReceipt, submitStoreSale, reviewStoreSale, correctHistoricalPayments, historicalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, balanceDue, cancelSale, emptyRetailState, financialReport, postMonthlyCosts, recordPurchase,
   recordSale, reverseSettlement, salesRanking, settleEntry, transferStock,
 } from "../domain/retail.ts";
 
@@ -198,4 +198,29 @@ test("vendedor precisa de aprovação abaixo de mil reais e aprovação não lan
   assert.throws(() => reviewStoreSale(state, checkout.id, true), /indisponível/);
   const atLimit = { ...checkout, id: "limite", discount: 0, payments: [{ ...checkout.payments[0], amount: 500000 }] };
   assert.equal(submitStoreSale(state, { checkout: atLimit, requestedBy: "seller" }, true), "registered");
+});
+
+test("conciliação de cartão registra crédito real, saldo parcial, diferença e estorno na conta", () => {
+  const state = fixture();
+  state.sales.push({ id: "cartao", customer: "Cliente", store, method: "Cartão", createdAt: time, total: 10000 });
+  state.cashAccounts = [{ id: "bank", store, kind: "Banco", openingDate: date, openingBalance: 0 }];
+  state.ledger.push({ id: "receber", saleId: "cartao", kind: "venda", direction: "in", store, amount: 10000,
+    cardFee: 300, cardReconciliation: true, date, due: date, settlements: [] });
+  assert.throws(() => settleEntry(state, "receber", { id: "generic", date, amount: 10000 }), /Conciliação/);
+  const partial = { token: "partial", date, amount: 4500, complete: false, accountId: "bank" };
+  reconcileCardReceipt(state, "receber", partial);
+  reconcileCardReceipt(state, "receber", partial);
+  assert.equal(cardReceivables(state)[0].pending, 5200);
+  assert.equal(financialReport(state, date, date, store).incoming, 4500);
+  const secondDate = "2026-11-08";
+  assert.throws(() => reconcileCardReceipt(state, "receber", { token: "wrong", date: secondDate, complete: true, accountId: "other" }), /conta bancária/);
+  reconcileCardReceipt(state, "receber", { token: "final", date: secondDate, amount: 5100, complete: true, accountId: "bank" });
+  const row = cardReceivables(state)[0];
+  assert.equal(row.open, false);
+  assert.equal(row.received, 9600);
+  assert.equal(row.difference, -100);
+  assert.equal(cashBalance(state.cashAccounts[0], cashMovements(state), secondDate), 9600);
+  reverseSettlement(state, "receber", "final", secondDate);
+  assert.equal(cardReceivables(state)[0].pending, 5200);
+  assert.equal(cashBalance(state.cashAccounts[0], cashMovements(state), secondDate), 4500);
 });

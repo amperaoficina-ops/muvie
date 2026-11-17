@@ -22,11 +22,11 @@ export type Asset = { acquiredOn?: string; id: string; name: string; store: Stor
 export type LedgerEntry = {
   id: string; store: StoreId; name: string; beneficiary?: string; beneficiaryEmail?: string; direction: "in" | "out";
   kind: "venda" | "estoque" | "consignacao" | "comissao" | "fixo" | "salario" | "despesa" | "outra-receita" | "ajuste" | "distribuicao-lucro";
-  amount: number; date: string; due: string; saleId?: string; cardFee?: number; nonCash?: boolean; canceled?: boolean; manual?: boolean;
+  amount: number; date: string; due: string; saleId?: string; cardFee?: number; cardReconciliation?: boolean; nonCash?: boolean; canceled?: boolean; manual?: boolean;
   frequency?: "monthly" | "standalone";
   recurrence?: { months?: number; endedOn?: string; due: string };
   recurringFrom?: string;
-  settlements: { id: string; amount: number; date: string; reversedOn?: string }[];
+  settlements: { id: string; amount: number; date: string; reversedOn?: string; cashAmount?: number }[];
 };
 export type StockLot = { variantId?: string; color?: ProductColor; purchaseId: string; productId: string; store: StoreId; quantity: number; unitCost: number; consigned: boolean; supplier: string; date: string };
 export const stages = ["Novo", "Em atendimento", "Proposta", "Ganho", "Perdido"] as const;
@@ -168,6 +168,7 @@ export function settleEntry(state: RetailState, id: string, payment: LedgerEntry
   const entry = state.ledger.find((item) => item.id === id);
   if (!entry || entry.canceled) throw new RetailError("Compromisso indisponível.");
   if (entry.settlements.some((item) => item.id === payment.id)) return;
+  if (entry.cardReconciliation && payment.cashAmount === undefined) throw new RetailError("Registre o crédito em Caixa → Conciliação de cartão.");
   if (!Number.isSafeInteger(payment.amount) || payment.amount <= 0 || payment.amount > balanceDue(entry)) {
     throw new RetailError("Informe um valor maior que zero e dentro do saldo em aberto.");
   }
@@ -273,13 +274,13 @@ export function saleNetProfit(sale: Sale) {
 export function ledgerCashEvents(entry: LedgerEntry) {
   if (entry.nonCash) return [];
   const events = entry.settlements.flatMap((payment) => [
-    { settlementId: payment.id, reversal: false, date: payment.date, amount: payment.amount },
-    ...(payment.reversedOn ? [{ settlementId: payment.id, reversal: true, date: payment.reversedOn, amount: -payment.amount }] : []),
+    { settlementId: payment.id, reversal: false, date: payment.date, amount: payment.amount, actual: payment.cashAmount },
+    ...(payment.reversedOn ? [{ settlementId: payment.id, reversal: true, date: payment.reversedOn, amount: -payment.amount, actual: payment.cashAmount === undefined ? undefined : -payment.cashAmount }] : []),
   ]).sort((a, b) => a.date.localeCompare(b.date));
   let gross = 0;
   const net = (value: number) => value - (entry.cardFee && entry.amount ? Math.round(value * entry.cardFee / entry.amount) : 0);
   return events.map((event) => {
-    const delta = net(gross + event.amount) - net(gross);
+    const delta = event.actual ?? net(gross + event.amount) - net(gross);
     gross += event.amount;
     return { ...event, amount: entry.direction === "in" ? delta : -delta };
   });
@@ -673,7 +674,7 @@ export function recordSale(state: RetailState, input: SaleInput, gift = false) {
 export type CheckoutItem = { productId: string; quantity: number; origin: string; gift: boolean; unitCostOverride?: number };
 export type CheckoutPayment = { assetDescription?: string; method: SalePayment["method"]; amount: number; received: boolean; due: string; rateId?: string };
 export type CheckoutInput = Omit<SaleInput, "productId" | "quantity" | "method" | "origin" | "receive"> & {
-  items: CheckoutItem[]; payments: CheckoutPayment[]; taxRateId?: string; manualTax?: number; deferCommission?: boolean;
+  items: CheckoutItem[]; payments: CheckoutPayment[]; taxRateId?: string; manualTax?: number; deferCommission?: boolean; reconcileCards?: boolean;
 };
 
 export function recordCheckout(state: RetailState, input: CheckoutInput) {
@@ -748,7 +749,7 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
     const id = input.id + "-payment-" + index;
     draft.ledger.unshift({ id, saleId: input.id, store: input.store, kind: "venda", direction: "in",
       name: "Venda · " + payment.method + (payment.fee ? " · taxa " + money(payment.fee) : ""),
-      amount: payment.amount, cardFee: payment.fee, nonCash: payment.method === "Produto" || undefined, date, due: payment.due,
+      amount: payment.amount, cardFee: payment.fee, cardReconciliation: input.reconcileCards && payment.method === "Cartão" || undefined, nonCash: payment.method === "Produto" || undefined, date, due: payment.due,
       settlements: payment.received ? [{ id: id + "-received", amount: payment.amount, date }] : [] });
   }
   draft.sales.unshift({ ...first, id: input.id, total, discount: input.discount, commission, lines, payments, tax,
@@ -1118,4 +1119,43 @@ export function reviewStoreSale(state: RetailState, id: string, approve: boolean
   sale.sellerMarginRestricted = true;
   draft.saleApprovalRequests = draft.saleApprovalRequests?.filter((item) => item.checkout.id !== id);
   Object.assign(state, draft);
+}
+
+export function cardReceivables(state: RetailState) {
+  const sales = new Map(state.sales.filter((sale) => !sale.canceledAt).map((sale) => [sale.id, sale]));
+  return state.ledger.flatMap((entry) => {
+    const sale = entry.saleId ? sales.get(entry.saleId) : undefined;
+    if (!sale || entry.kind !== "venda" || entry.canceled || entry.nonCash) return [];
+    const prefix = sale.id + "-payment-";
+    const payment = entry.id.startsWith(prefix) ? sale.payments?.[Number(entry.id.slice(prefix.length))] : undefined;
+    if ((payment?.method ?? sale.method) !== "Cartão") return [];
+    const expected = entry.amount - (entry.cardFee ?? 0);
+    const received = ledgerCashEvents(entry).reduce((sum, event) => sum + event.amount, 0);
+    const open = balanceDue(entry) > 0;
+    return [{ entry, sale, payment, expected, received, open,
+      pending: open ? Math.max(0, expected - received) : 0,
+      difference: open ? 0 : received - expected }];
+  });
+}
+
+export function reconcileCardReceipt(state: RetailState, id: string, input: {
+  token: string; date: string; amount?: number; complete: boolean; accountId?: string;
+}) {
+  const row = cardReceivables(state).find(({ entry }) => entry.id === id);
+  if (!row) throw new RetailError("Recebimento de cartão indisponível.");
+  if (row.entry.settlements.some((payment) => payment.id === input.token)) return;
+  if (!row.open) throw new RetailError("Este recebimento de cartão já foi encerrado.");
+  const actual = input.amount ?? row.pending;
+  if (!Number.isSafeInteger(actual) || actual < 0 || (!input.complete && (actual <= 0 || actual >= row.pending))) {
+    throw new RetailError("Informe um recebimento parcial menor que o saldo ou confirme o encerramento.");
+  }
+  const account = input.accountId && state.cashAccounts?.find((item) => item.id === input.accountId && item.store === row.entry.store &&
+    item.kind === "Banco" && item.openingDate <= input.date);
+  if (input.accountId && !account) throw new RetailError("Selecione uma conta bancária da unidade aberta na data do crédito.");
+  const outstanding = balanceDue(row.entry);
+  if (!input.complete && outstanding < 2) throw new RetailError("Confirme o encerramento desse recebimento.");
+  const gross = input.complete ? outstanding : Math.max(1, Math.min(outstanding - 1, Math.round(outstanding * actual / row.pending)));
+  settleEntry(state, id, { id: input.token, amount: gross, date: input.date, cashAmount: actual });
+  row.entry.cardReconciliation = true;
+  if (account) (state.cashAssignments ??= []).push({ entryId: id, settlementId: input.token, accountId: account.id });
 }

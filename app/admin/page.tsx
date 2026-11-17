@@ -1,6 +1,7 @@
 import { matchesSearch } from "./search-text";
 import { Contracts } from "./contracts";
 import { HistoricalPayments } from "./historical-payments";
+import { CardReconciliation } from "./card-reconciliation";
 import { Cash } from "./cash";
 import { LotColorFields } from "./product-color-fields";
 import { ModelCard } from "../catalog";
@@ -862,7 +863,7 @@ function Sales({ state, filter, invoices, focus, error, showCost, canEditCosts, 
       {error && <p className="feedback error" role="alert">{error}</p>}
       {products.length ? <form className="admin-form" action={saveSale}>
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
-        <SaleCustomer contacts={contacts.map((contact) => ({ id: contact.id, label: contact.name + " · " + storeName(contact.store, state) }))} />
+        <SaleCustomer restricted={user.role === "sales"} contacts={contacts.map((contact) => ({ id: contact.id, label: contact.name + " · " + storeName(contact.store, state) }))} />
         <CheckoutFields units={storeList(state)} initialStore={filter} rates={state.cardRates} machines={state.cardMachines} taxRates={state.taxRates ?? []}
           products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))}
           showCost={showCost && user.role !== "sales"} restricted={user.role === "sales"}
@@ -1003,7 +1004,7 @@ function ClientHistory({ state, contact, invoices, showSales, showPurchases }: {
 
 export const metadata = { title: "Painel de operação" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; catalogoPagina?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string; conta?: string; caixaPagina?: string; caixaTipo?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; loja?: string; ok?: string; erro?: string; ficha?: string; produto?: string; categoria?: string; statusVenda?: string; tipoCompromisso?: string; prazoCompromisso?: string; compromissosVisao?: string; compromissosPagina?: string; baixaInicio?: string; baixaFim?: string; maquininha?: string; catalogoPagina?: string; estoqueVisao?: string; movimentosPagina?: string; saldosPagina?: string; lotesPagina?: string; busca?: string; etapa?: string; inicio?: string; fim?: string; conta?: string; caixaPagina?: string; caixaTipo?: string; caixaVisao?: string }> }) {
   const user = await requireUser();
   const params = await searchParams;
   const visibleNav = nav.filter((item) => canAccess(user, item.id));
@@ -1027,7 +1028,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     ...(paidTo ? { baixaFim: paidTo } : {}),
   }) : "";
   const cashDirection = params.caixaTipo === "entradas" || params.caixaTipo === "saidas" ? params.caixaTipo : undefined;
-  const periodQuery = active.id === "financeiro" || active.id === "visao" || active.id === "caixa" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to, ...(active.id === "caixa" && cashDirection ? { caixaTipo: cashDirection } : {}) }) : "";
+  const cardView = active.id === "caixa" && params.caixaVisao === "cartao";
+  const periodQuery = active.id === "financeiro" || active.id === "visao" || active.id === "caixa" ? "&" + new URLSearchParams({ inicio: period.from, fim: period.to, ...(active.id === "caixa" && cashDirection ? { caixaTipo: cashDirection } : {}), ...(cardView ? { caixaVisao: "cartao" } : {}) }) : "";
   const showInvoices = ["compras", "vendas", "crm", "bens"].includes(active.id) || (active.id === "visao" && (showSales || showPurchases));
   const [state, invoices, users] = await Promise.all([
     denied ? null : readRetail().catch(() => null),
@@ -1136,7 +1138,14 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "fornecedores" && <Suppliers suppliers={state.suppliers} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "funcionarios" && <StaffPanel state={state} filter={filter} focus={params.ficha} error={params.erro} success={params.ok} />}
           {active.id === "contratos" && <Contracts canImport={isDirector(user)} query={query} />}
-          {active.id === "caixa" && <Cash state={state} filter={filter} period={period} selected={params.conta} page={params.caixaPagina} direction={cashDirection} />}
+          {active.id === "caixa" && <>
+            <nav className="branch-filter" aria-label="Seções do Caixa">
+              <Link aria-current={!cardView ? "page" : undefined} href={adminUrl("caixa", filter) + "&" + new URLSearchParams({ inicio: period.from, fim: period.to })}>Extrato e contas</Link>
+              <Link aria-current={cardView ? "page" : undefined} href={adminUrl("caixa", filter) + "&" + new URLSearchParams({ caixaVisao: "cartao", inicio: period.from, fim: period.to })}>Conciliação de cartão</Link>
+            </nav>
+            {cardView ? <CardReconciliation canReconcile={user.role !== "sales"} state={state} filter={filter} period={period} page={params.caixaPagina} />
+              : <Cash state={state} filter={filter} period={period} selected={params.conta} page={params.caixaPagina} direction={cashDirection} />}
+          </>}
           {active.id === "financeiro" && <Finance state={state} filter={filter} period={period} />}
           {active.id === "compromissos" && <Commitments view={commitmentView} paidFrom={paidFrom} paidTo={paidTo} requestedPage={params.compromissosPagina} kind={commitmentKind} deadline={commitmentDeadline} state={state} filter={filter} createError={params.ficha ? params.erro : undefined} />}
           {active.id === "crm" && <CRM query={query} stage={params.etapa} error={params.erro} success={params.ok} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} showSales={showSales} showPurchases={showPurchases} />}

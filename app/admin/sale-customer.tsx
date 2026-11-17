@@ -3,12 +3,12 @@
 import { SearchSelect } from "./search-select";
 import { useState } from "react";
 
-export function SaleCustomer({ contacts }: { contacts: { id: string; label: string }[] }) {
-  const [mode, setMode] = useState("walk-in");
+export function SaleCustomer({ contacts, restricted = false }: { contacts: { id: string; label: string }[]; restricted?: boolean }) {
+  const [mode, setMode] = useState(restricted ? "new" : "walk-in");
   return <fieldset className="address-fields span-two">
     <legend>Cliente</legend>
     <label>Como identificar o cliente<SearchSelect name="customerMode" value={mode} onChange={(event) => setMode(event.target.value)}>
-      <option value="walk-in">Informar nome na venda</option>
+      {!restricted && <option value="walk-in">Informar nome na venda</option>}
       <option value="existing" disabled={!contacts.length}>Vincular cliente cadastrado</option>
       <option value="new">Cadastrar novo cliente nesta venda</option>
     </SearchSelect></label>
@@ -17,9 +17,9 @@ export function SaleCustomer({ contacts }: { contacts: { id: string; label: stri
       {contacts.map((contact) => <option value={contact.id} key={contact.id}>{contact.label}</option>)}
     </SearchSelect></label> : <label>Nome do cliente<input name="customer" required maxLength={100} /></label>}
     {mode === "new" && <>
-      <label>Telefone<input name="phone" type="tel" maxLength={32} /></label>
-      <label>E-mail<input name="email" type="email" maxLength={254} /></label>
-      <label>CPF<input name="cpf" inputMode="numeric" maxLength={20} /></label>
+      <label>Telefone<input name="phone" type="tel" required={restricted} maxLength={32} /></label>
+      <label>E-mail<input name="email" type="email" required={restricted} maxLength={254} /></label>
+      <label>CPF<input name="cpf" inputMode="numeric" required={restricted} maxLength={20} /></label>
       <p className="form-note span-two">Ao confirmar a venda, a ficha será criada no CRM da unidade escolhida e vinculada ao histórico.</p>
     </>}
   </fieldset>;

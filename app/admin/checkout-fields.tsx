@@ -68,8 +68,8 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
         setItems(items.map((item) => ({ ...item, productId: "", origin: "", override: "" })));
       }}><option value="">Selecione a unidade</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
     <input type="hidden" name="store" value={store} />
-    <label>Vendedor da unidade<SearchSelect name="sellerId" value={sellerId} onChange={(event) => setSeller(event.target.value)}>
-      <option value="">Sem vendedor</option>{sellers.filter((seller) => seller.store === store).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
+    <label>Vendedor da unidade<SearchSelect name="sellerId" required={restricted} value={sellerId} onChange={(event) => setSeller(event.target.value)}>
+      <option value="" disabled={restricted}>{restricted ? "Selecione o vendedor" : "Sem vendedor"}</option>{sellers.filter((seller) => seller.store === store).map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
     </SearchSelect></label>
     <label>Desconto da venda (R$)<input name="discount" inputMode="decimal" value={discount} onChange={(event) => setDiscount(event.target.value)} placeholder="0,00" /></label>
     <fieldset className="address-fields span-two checkout-group">
@@ -94,17 +94,20 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
     <fieldset className="address-fields span-two checkout-group">
       <legend>Pagamentos</legend>
       {payments.map((payment, index) => <div className="checkout-row span-two" key={payment.key}>
-        <label>Forma<SearchSelect name="checkoutMethod" value={payment.method} onChange={(event) => patchPayment(payment.key, { method: paymentMethods.find((item) => item === event.target.value) ?? "Pix" })}>{paymentMethods.map((method) => <option key={method}>{method}</option>)}</SearchSelect></label>
+        <label>Forma<SearchSelect name="checkoutMethod" value={payment.method} onChange={(event) => {
+          const method = paymentMethods.find((item) => item === event.target.value) ?? "Pix";
+          patchPayment(payment.key, { method, ...(restricted && method === "Cartão" ? { received: false } : {}) });
+        }}>{paymentMethods.map((method) => <option key={method}>{method}</option>)}</SearchSelect></label>
         <label>{index === payments.length - 1 ? "Saldo automático (R$)" : "Valor (R$)"}<input name="checkoutAmount" inputMode="decimal" readOnly={index === payments.length - 1} value={amounts[index]} required onChange={(event) => patchPayment(payment.key, { value: event.target.value })} /></label>
         {payment.method === "Cartão" ? <CardPaymentFields machines={machines} rates={rates} machineId={payment.machineId} rateId={payment.rateId}
           names={{ machine: "checkoutMachine", rate: "checkoutRate" }} onChange={(machineId, rateId) => patchPayment(payment.key, { machineId, rateId })} />
           : <><input type="hidden" name="checkoutMachine" value="" /><input type="hidden" name="checkoutRate" value="" /></>}
-        {payment.method === "Produto" ? <label>Bem recebido na troca<input name="checkoutAsset" maxLength={120}
+        {payment.method === "Produto" ? <label>Bem recebido na troca<input name="checkoutAsset" required={restricted} maxLength={120}
           placeholder="Ex.: scooter X13 usada, celular ou carro" value={payment.assetDescription ?? ""}
           onChange={(event) => patchPayment(payment.key, { assetDescription: event.target.value })} /></label>
           : <input type="hidden" name="checkoutAsset" value="" />}
         <label>Recebimento<SearchSelect name="checkoutStatus" value={payment.received ? "received" : "pending"} onChange={(event) => patchPayment(payment.key, { received: event.target.value === "received" })}>
-          <option value="received">Já recebido</option><option value="pending">A receber</option></SearchSelect></label>
+          <option value="received" disabled={restricted && payment.method === "Cartão"}>Já recebido</option><option value="pending">{restricted && payment.method === "Cartão" ? "A conciliar no Caixa" : "A receber"}</option></SearchSelect></label>
         {payment.received ? <input type="hidden" name="checkoutDue" value="" /> : <label>Vencimento<input name="checkoutDue" type="date" required value={payment.due} onChange={(event) => patchPayment(payment.key, { due: event.target.value })} /></label>}
         {index > 0 && <button type="button" className="button danger" onClick={() => setPayments(payments.filter((row) => row.key !== payment.key))}>Remover pagamento</button>}
       </div>)}
@@ -112,6 +115,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
     </fieldset>
     <fieldset className="address-fields span-two checkout-group">
       <legend>Imposto da venda</legend>
+      {restricted && !defaultTax && <p className="feedback error span-two" role="alert">A Diretoria precisa cadastrar o imposto padrão antes de você fechar a venda.</p>}
       {!restricted && <label>Como calcular<SearchSelect value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
         <option value="">{defaultTax ? "Usar imposto padrão" : "Sem alíquota cadastrada"}</option>
         {taxRates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {(rate.basisPoints / 100).toLocaleString("pt-BR")}%{rate.defaultForSale ? " · padrão" : ""}</option>)}

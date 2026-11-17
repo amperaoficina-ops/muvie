@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, submitStoreSale, reviewStoreSale, sellerMinimumProfit, saleNetProfit, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
+  correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, submitStoreSale, reviewStoreSale, cardReceivables, reconcileCardReceipt, sellerMinimumProfit, saleNetProfit, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -73,6 +73,7 @@ async function runAction(form: FormData, tab: Tab, message: string | (() => stri
     if (typeof account === "string" && (uuidPattern.test(account) || account === "sem-conta")) params.set("conta", account);
     const direction = form.get("caixaTipo");
     if (direction === "entradas" || direction === "saidas") params.set("caixaTipo", direction);
+    if (form.get("caixaVisao") === "cartao") params.set("caixaVisao", "cartao");
     const page = form.get("caixaPagina");
     if (typeof page === "string" && /^\d{1,8}$/.test(page)) params.set("caixaPagina", page);
   }
@@ -345,7 +346,8 @@ export async function saveSale(form: FormData) {
     if (!uuidPattern.test(id)) throw new RetailError("Reabra o formulário de venda.");
     if (state.sales.some((sale) => sale.id === id)) return;
     const store = choice(form, "store", storeIds(state));
-    const mode = form.has("customerMode") ? choice(form, "customerMode", ["existing", "new", "walk-in"]) : "walk-in";
+    const mode = restricted ? choice(form, "customerMode", ["existing", "new"])
+      : form.has("customerMode") ? choice(form, "customerMode", ["existing", "new", "walk-in"]) : "walk-in";
     let contactId = value(form, "contactId", 36, mode === "existing");
     const customer = mode === "existing" ? "" : value(form, "customer", 100, mode === "new");
     let contact: RetailState["contacts"][number] | undefined;
@@ -355,6 +357,14 @@ export async function saveSale(form: FormData) {
       contact = { id: contactId, name: customer, phone: value(form, "phone", 32, false), email, cpf,
         store, stage: "Ganho", interest: "", nextContact: "", notes: "", createdAt };
     }
+    const defaultTax = restricted ? state.taxRates?.find((rate) => rate.defaultForSale) : undefined;
+    if (restricted) {
+      if (!defaultTax) throw new RetailError("Peça à Diretoria para cadastrar um imposto padrão de venda, inclusive se for 0%.");
+      const customerRecord = contact ?? state.contacts.find((item) => item.id === contactId && item.store === store);
+      if (!customerRecord?.name || !customerRecord.phone || !customerRecord.email || !customerRecord.cpf) {
+        throw new RetailError("Preencha nome, telefone, e-mail e CPF do cliente antes de registrar a venda.");
+      }
+    }
     if (form.has("checkoutProduct")) {
       const products = form.getAll("checkoutProduct");
       const quantities = form.getAll("checkoutQuantity");
@@ -362,6 +372,9 @@ export async function saveSale(form: FormData) {
       const overrides = form.getAll("checkoutCost");
       if ((restricted || !canAccess(user, "financeiro")) && overrides.some((item) => String(item).trim())) throw new RetailError("Sem permissão para editar custos.");
       const kinds = form.getAll("checkoutKind");
+      if (restricted && (kinds.length !== products.length || kinds.some((kind) => kind !== "sale" && kind !== "gift"))) {
+        throw new RetailError("Selecione o tipo de cada item da venda.");
+      }
       const methods = form.getAll("checkoutMethod");
       const assets = form.getAll("checkoutAsset");
       const amounts = form.getAll("checkoutAmount");
@@ -371,8 +384,8 @@ export async function saveSale(form: FormData) {
       const dates = form.getAll("checkoutDue");
       const manualTax = !restricted && form.get("taxMode") === "manual" ? value(form, "manualTax", 32) : undefined;
       result = submitStoreSale(state, { contact, requestedBy: user.email, checkout: { id, store, customer, contactId, createdAt, discount: amount(form, "discount"),
-        sellerId: value(form, "sellerId", 36, false),
-        taxRateId: restricted ? undefined : value(form, "taxRateId", 36, false),
+        sellerId: value(form, "sellerId", 36, restricted), reconcileCards: restricted,
+        taxRateId: restricted ? defaultTax?.id : value(form, "taxRateId", 36, false),
         manualTax: manualTax === undefined ? undefined : amount(form, "manualTax"),
         items: products.map((productId, index) => ({ productId: String(productId), quantity: Number(quantities[index]),
           origin: String(origins[index] ?? ""), gift: kinds[index] === "gift",
@@ -381,9 +394,13 @@ export async function saveSale(form: FormData) {
           const matched = paymentMethods.find((item) => item === method);
           const paid = parseReais(String(amounts[index] ?? ""));
           if (!matched || paid === null) throw new RetailError("Confira os pagamentos da venda.");
-          if (methods.length === 1 && paid === 0) return [];
+          if (!restricted && methods.length === 1 && paid === 0) return [];
           if (matched === "Cartão" && !state.cardRates.some((rate) => rate.id === rates[index] && rateMachineId(rate) === machines[index] && cardMachineIsActive(state.cardMachines, rateMachineId(rate)))) {
             throw new RetailError("Selecione uma maquininha ativa e uma taxa cadastrada nela.");
+          }
+          if (restricted && (paid <= 0 || !["received", "pending"].includes(String(statuses[index])) ||
+            (matched === "Cartão" && statuses[index] !== "pending") || (matched === "Produto" && !String(assets[index] ?? "").trim()))) {
+            throw new RetailError("Preencha a forma, o valor e os dados de cada pagamento. Cartão deve ficar a receber até a conciliação.");
           }
           return [{ method: matched, amount: paid, assetDescription: matched === "Produto" ? String(assets[index] ?? "").trim().slice(0, 120) : undefined, rateId: String(rates[index] ?? ""),
             received: statuses[index] === "received", due: String(dates[index] ?? "") }];
@@ -900,5 +917,37 @@ export async function importContract(form: FormData) {
     const file = form.get("contract");
     if (!(file instanceof File)) throw new RetailError("Selecione o PDF do contrato.");
     await storeContract(file, value(form, "title", 120, false));
+  });
+}
+
+export async function saveCardReceipt(form: FormData) {
+  await runAction(form, "caixa", "Recebimento de cartão registrado.", (user) => {
+    if (user.role === "sales") throw new RetailError("A conciliação de cartão é feita pelo Financeiro ou pela Diretoria.");
+    return editWithAudit(user, "Registra crédito de cartão", (state) => {
+      const mode = choice(form, "mode", ["expected", "partial", "close"]);
+      const token = value(form, "token", 36);
+      if (mode !== "expected") value(form, "amount", 32);
+      if (!uuidPattern.test(token)) throw new RetailError("Reabra a conciliação para registrar o crédito.");
+      reconcileCardReceipt(state, value(form, "entryId", 180), {
+        token, date: requiredDate(form, "date"), complete: mode !== "partial",
+        amount: mode === "expected" ? undefined : amount(form, "amount"),
+        accountId: value(form, "accountId", 36),
+      });
+    });
+  });
+}
+
+export async function reverseCardReceipt(form: FormData) {
+  await runAction(form, "caixa", "Crédito de cartão estornado.", (user) => {
+    if (user.role === "sales") throw new RetailError("A conciliação de cartão é feita pelo Financeiro ou pela Diretoria.");
+    return editWithAudit(user, "Estorna crédito de cartão", (state) => {
+      const entryId = value(form, "entryId", 180);
+      const paymentId = value(form, "paymentId", 180);
+      const row = cardReceivables(state).find(({ entry }) => entry.id === entryId);
+      if (!row?.entry.settlements.some((payment) => payment.id === paymentId && payment.cashAmount !== undefined && !payment.reversedOn)) {
+        throw new RetailError("Crédito de cartão indisponível para estorno.");
+      }
+      reverseSettlement(state, entryId, paymentId, requiredDate(form, "date"));
+    });
   });
 }
