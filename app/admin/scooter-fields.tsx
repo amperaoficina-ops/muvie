@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { productCategories, type Product } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
 
@@ -16,12 +16,14 @@ function ScooterFields({ specs, purchase }: { specs?: ScooterSpecs | null; purch
   </fieldset>;
 }
 
-export function ProductCategoryFields({ product }: { product?: Pick<Product, "category" | "specs"> }) {
-  const [category, setCategory] = useState<string>(product?.category ?? scooterCategory);
+export function ProductCategoryFields({ product, children }: { product?: Pick<Product, "category" | "specs">; children: ReactNode }) {
+  const [category, setCategory] = useState<string>(product?.category === "Bicicleta elétrica" ? "" : product?.category ?? "");
   return <>
-    <label>Categoria<select name="category" value={category} onChange={(event) => setCategory(event.target.value)}>
+    <label className="span-two">Categoria<select name="category" required value={category} onChange={(event) => setCategory(event.target.value)}>
+      <option value="" disabled>Selecione a categoria</option>
       {productCategories.map((item) => <option key={item}>{item}</option>)}
     </select></label>
+    {children}
     {category === scooterCategory && <ScooterFields specs={product?.specs} />}
   </>;
 }

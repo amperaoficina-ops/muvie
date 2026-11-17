@@ -21,14 +21,14 @@ export type LedgerEntry = {
 export type StockLot = { purchaseId: string; productId: string; store: StoreId; quantity: number; unitCost: number; consigned: boolean; supplier: string; date: string };
 export const stages = ["Novo", "Em atendimento", "Proposta", "Ganho", "Perdido"] as const;
 export const paymentMethods = ["Pix", "Cartão", "Dinheiro", "Financiamento"] as const;
-export const productCategories = ["Scooter elétrica", "Bicicleta elétrica", "Acessório", "Peça"] as const;
+export const productCategories = ["Scooter elétrica", "Acessório", "Peça"] as const;
 export type TaxRate = { id: string; name: string; basisPoints: number; defaultForSale: boolean };
 export type SaleTax = { amount: number; name: string; basisPoints?: number };
 export type CardRate = { id: string; name: string; mode: "Débito" | "Crédito"; installments: number; basisPoints: number };
 export type AuditEvent = { id: string; actor: string; action: string; at: string };
 export type Testimonial = { id: string; author: string; quote: string };
 export type Product = {
-  id: string; sku: string; name: string; category: typeof productCategories[number];
+  id: string; sku: string; name: string; category: typeof productCategories[number] | "Bicicleta elétrica";
   description: string; imageUrl: string; price: number; purchaseCost?: number | null; published: boolean;
   stock: Record<StoreId, number>;
   specs?: ScooterSpecs | null;

@@ -208,9 +208,10 @@ function CatalogSettings({ state }: { state: RetailState }) {
 function ProductForm({ filter, product }: { filter: Filter; product?: Product }) {
   return <form className="admin-form" action={saveProduct}>
     <FilterInput filter={filter} />{product && <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="focus" value={product.id} /></>}
+    <ProductCategoryFields product={product && { category: product.category, specs: product.specs }}>
     <label>Nome<input name="name" required maxLength={100} defaultValue={product?.name} placeholder="Nome comercial" /></label>
     <label>SKU<input name="sku" required maxLength={40} defaultValue={product?.sku} placeholder="Código do produto" /></label>
-    <ProductCategoryFields product={product && { category: product.category, specs: product.specs }} />
+    </ProductCategoryFields>
     <label>Preço de venda (R$)<input name="price" inputMode="decimal" maxLength={32} defaultValue={product ? (product.price / 100).toFixed(2).replace(".", ",") : ""} placeholder="0,00" /></label>
     {product?.imageUrl && <div className="product-photo-preview span-two">
       <Image src={product.imageUrl} alt={product.name} width={96} height={72} unoptimized />
@@ -230,7 +231,7 @@ function matchesSearch(query: string, ...fields: string[]) {
   return !query || searchText(fields.join(" ")).includes(searchText(query));
 }
 
-function CategoryFilters({ tab, filter, category, query, view }: { tab: "estoque" | "produtos"; filter: Filter; category?: Product["category"]; query: string; view?: string }) {
+function CategoryFilters({ tab, filter, category, query, view }: { tab: "estoque" | "produtos" | "compras"; filter: Filter; category?: Product["category"]; query: string; view?: string }) {
   return <nav className="stock-category-filter" aria-label="Filtrar por categoria">
       {[undefined, ...productCategories].map((item) => <Link key={item ?? "all"} aria-current={item === category ? "true" : undefined}
         href={adminUrl(tab, filter) + "&" + new URLSearchParams({ ...(item ? { categoria: item } : {}), ...(query ? { busca: query } : {}), ...(view ? { estoqueVisao: view } : {}) })}>
@@ -251,16 +252,16 @@ function Products({ products, filter, query, focus, error, category }: { product
         <CategoryFilters tab="produtos" filter={filter} category={category} query={query} />
         <RecordSearch key={filter + ":" + (category ?? "")} tab="produtos" store={filter} category={category} query={query} />
       </div>
-      {products.length ? <Table headers={["Produto", "Categoria", "Preço de venda", "Status", "Ação"]}>
+      {products.length ? <Table headers={["Categoria", "Produto", "Preço de venda", "Status", "Ação"]}>
         {products.map((product) => <tr key={product.id}>
-          <td><strong>{product.name}</strong><small>{product.sku}</small></td>
-          <td>{product.category}</td><td>{money(product.price)}</td>
+          <td>{product.category === "Bicicleta elétrica" ? "Reclassificar" : product.category}</td>
+          <td><strong>{product.name}</strong><small>{product.sku}</small></td><td>{money(product.price)}</td>
           <td><span className="pill">{product.published ? "Na landing" : "Interno"}</span></td>
           <td><DetailsDialog id={"produto-" + product.id} title={product.name} trigger="Editar detalhes" reopen={focus === product.id}>
             <div className="sale-detail-content">
               {error && focus === product.id && <p className="feedback error" role="alert">{error}</p>}
               <ProductForm product={product} filter={filter} />
-              <div className="record-actions"><Link className="back-link" href={adminUrl("compras", filter) + "&produto=" + product.id}>Registrar compra deste produto →</Link></div>
+              <div className="record-actions"><Link className="back-link" href={adminUrl("compras", filter) + "&produto=" + encodeURIComponent(product.id) + "#registrar-compra"}>Registrar compra deste produto →</Link></div>
             </div>
           </DetailsDialog></td>
         </tr>)}
@@ -269,19 +270,35 @@ function Products({ products, filter, query, focus, error, category }: { product
   </>;
 }
 
-function Purchases({ state, filter, invoices, focus, productId, query }: {
-  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; productId?: string; query: string;
+function Purchases({ state, filter, invoices, focus, productId, query, category, error }: {
+  state: RetailState; filter: Filter; invoices: InvoiceMeta[]; focus?: string; productId?: string; query: string; category?: Product["category"]; error?: string;
 }) {
-  const purchases = state.purchases.filter((purchase) => (!filter || purchase.store === filter) && matchesSearch(query, purchase.productName, purchase.sku, purchase.supplier));
+  const productCategoriesById = new Map(state.products.map((item) => [item.id, item.category]));
+  const purchases = state.purchases.filter((purchase) => (!filter || purchase.store === filter) && (!category || productCategoriesById.get(purchase.productId) === category) && matchesSearch(query, purchase.productName, purchase.sku, purchase.supplier));
   const product = state.products.find((item) => item.id === productId);
   const purchaseId = randomUUID();
-  return <div className="operation-grid">
+  const focusedPurchase = purchases.some((item) => item.id === focus);
+  return <>
     <section className="panel">
       <div className="panel-title"><h2>Histórico de compras</h2><span className="pill">{purchases.length} compras</span></div>
-      {purchases.length ? <div className="editable-list">{purchases.map((purchase) => (
-        <details name="purchase-record" key={purchase.id} open={focus === purchase.id}>
-          <summary><span><strong>{purchase.productName}</strong><small>{calendarLabel(purchase.date)} · {storeName(purchase.store, state)} · {purchase.supplier}</small></span>
-            <span className="pill">{purchaseStatus(state, purchase.id, purchase.acquisition)}</span><strong>{money(purchase.total)}</strong></summary>
+      <div className="panel-title">
+        <CategoryFilters tab="compras" filter={filter} category={category} query={query} />
+        <RecordSearch key={filter + ":" + (category ?? "")} tab="compras" store={filter} category={category} query={query} />
+      </div>
+      {purchases.length ? <Table headers={["Categoria", "Produto", "Data", "Unidade", "Fornecedor", "Condição", "Total", "Ação"]}>{purchases.map((purchase) => (
+        <tr key={purchase.id}>
+          <td>{productCategories.find((item) => item === productCategoriesById.get(purchase.productId)) ?? "—"}</td>
+          <td><strong>{purchase.productName}</strong><small>{purchase.sku}</small></td>
+          <td>{calendarLabel(purchase.date)}</td><td>{storeName(purchase.store, state)}</td><td>{purchase.supplier}</td>
+          <td><span className="pill">{purchaseStatus(state, purchase.id, purchase.acquisition)}</span></td>
+          <td>{money(purchase.total)}</td>
+          <td><DetailsDialog id={"compra-" + purchase.id} title="Detalhes da compra" reopen={focus === purchase.id}>
+          <div className="sale-detail-content">
+          {error && focus === purchase.id && <p className="feedback error" role="alert">{error}</p>}
+          <div className="sale-detail-card"><h3>{purchase.productName}</h3>
+            <p>{calendarLabel(purchase.date)} · {storeName(purchase.store, state)} · {purchase.supplier}</p>
+            <p>{purchaseStatus(state, purchase.id, purchase.acquisition)} · {money(purchase.total)}</p>
+          </div>
           <div className="record-actions">
             <p>{purchase.sku} · {purchase.quantity} un. × {money(purchase.unitCost)}</p>
             {purchase.openingBalance && <p>Regularização de saldo anterior</p>}
@@ -298,11 +315,12 @@ function Purchases({ state, filter, invoices, focus, productId, query }: {
             <p className="form-note span-two">As vendas já registradas mantêm seus custos. Ajuste-as pelo histórico de vendas, se necessário.</p>
           </form>
           <InvoiceBox owner="purchase" id={purchase.id} filter={filter} invoices={invoices} />
-        </details>
-      ))}</div> : <Empty>{query ? "Nenhuma compra encontrada." : "As compras registradas nesta unidade aparecerão aqui."}</Empty>}
+          </div></DetailsDialog></td>
+        </tr>
+      ))}</Table> : <Empty>{query || category ? "Nenhuma compra encontrada." : "As compras registradas nesta unidade aparecerão aqui."}</Empty>}
     </section>
-    <section id="registrar-compra" className="panel">
-      <div className="panel-title"><h2>Registrar compra</h2></div>
+    <CreateDialog id="registrar-compra" title="Registrar compra" reopen={Boolean(error && !focusedPurchase)}>
+      {error && !focusedPurchase && <p className="feedback error" role="alert">{error}</p>}
       {state.products.length ? <form action={savePurchase} className="admin-form">
         <FilterInput filter={filter} />
         <input type="hidden" name="purchaseId" value={purchaseId} />
@@ -324,8 +342,8 @@ function Purchases({ state, filter, invoices, focus, productId, query }: {
         <p className="form-note span-two">Uma compra nova cria um lote e dá entrada no estoque. Ao vincular saldo antigo, o lote recebe o custo sem duplicar unidades nem gerar cobrança.</p>
         <div className="span-two"><Submit>Registrar compra</Submit></div>
       </form> : <Empty><Link href={adminUrl("produtos", filter)}>Cadastre um produto para registrar compras →</Link></Empty>}
-    </section>
-  </div>;
+    </CreateDialog>
+  </>;
 }
 
 function purchaseStatus(state: RetailState, id: string, condition?: string) {
@@ -711,7 +729,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const category = productCategories.find((item) => item === params.categoria);
   const stockView = stockViews.find(({ id }) => id === params.estoqueVisao)?.id ?? "produtos";
   const stockViewQuery = active.id === "estoque" ? "&" + new URLSearchParams({ estoqueVisao: stockView }) : "";
-  const categoryQuery = active.id === "estoque" && category ? "&" + new URLSearchParams({ categoria: category }) : "";
+  const categoryQuery = (active.id === "estoque" || active.id === "compras") && category ? "&" + new URLSearchParams({ categoria: category }) : "";
   const supportsSearch = ["estoque", "compras", "produtos", "crm"].includes(active.id);
   const query = supportsSearch && typeof params.busca === "string" ? params.busca.trim().slice(0, 100) : "";
   const searchQuery = query ? "&" + new URLSearchParams({ busca: query }) : "";
@@ -719,7 +737,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 
   const group = navGroups.find(({ tabs }) => tabs.includes(active.id))?.title;
   const primary = moduleActions[active.id];
-  const actionBesideUnits = active.id === "crm" || active.id === "estoque";
+  const actionBesideUnits = active.id === "crm" || active.id === "estoque" || active.id === "compras";
   const shortcuts = [
     ["vendas", "Nova venda", "Registrar cliente, produtos e pagamento"],
     ["compras", "Registrar compra", "Lançar fornecedor e entrada de produtos"],
@@ -764,7 +782,6 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery + searchQuery + stockViewQuery} key={store.id}>{store.name}</Link>)}
           </nav></div></div>}
         </div>
-        {!denied && state && active.id === "compras" && <RecordSearch key={filter} tab="compras" store={filter} query={query} />}
         {params.ok && <p className="feedback success" role="status">{params.ok}</p>}
         {params.erro && <p className="feedback error" role="alert">{params.erro}</p>}
         {state && !invoices && <p className="feedback error" role="alert">Não foi possível carregar os anexos de notas fiscais.</p>}
@@ -786,7 +803,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} />}
           {active.id === "estoque" && <Stock view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
-          {active.id === "compras" && <Purchases query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
+          {active.id === "compras" && <Purchases category={category} error={params.erro} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
             <Sales canEditCosts={user.role === "admin" || isPrimaryAdmin(user)} detailFeedback={params.erro ? { message: params.erro, error: true } : params.ok ? { message: params.ok, error: false } : undefined} saleFilter={params.statusVenda} showCost={canAccess(user, "financeiro")} state={state} filter={filter} invoices={invoices} focus={params.ficha} error={params.ficha && !state.sales.some((sale) => sale.id === params.ficha) ? params.erro : undefined} />
           </>}
