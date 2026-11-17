@@ -3,13 +3,12 @@
 import { useState } from "react";
 
 export function SaleCustomer({ contacts }: { contacts: { id: string; label: string }[] }) {
-  const [mode, setMode] = useState("walk-in");
+  const [mode, setMode] = useState("new");
   return <fieldset className="address-fields span-two">
     <legend>Cliente</legend>
     <label>Como identificar o cliente<select name="customerMode" value={mode} onChange={(event) => setMode(event.target.value)}>
-      <option value="walk-in">Informar nome na venda</option>
-      <option value="existing" disabled={!contacts.length}>Vincular cliente cadastrado</option>
       <option value="new">Cadastrar novo cliente nesta venda</option>
+      <option value="existing" disabled={!contacts.length}>Vincular cliente cadastrado</option>
     </select></label>
     {mode === "existing" ? <label>Cliente cadastrado<select name="contactId" required defaultValue="">
       <option value="" disabled>Selecione um cliente</option>
