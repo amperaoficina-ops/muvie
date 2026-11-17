@@ -22,6 +22,8 @@ export type StockLot = { purchaseId: string; productId: string; store: StoreId; 
 export const stages = ["Novo", "Em atendimento", "Proposta", "Ganho", "Perdido"] as const;
 export const paymentMethods = ["Pix", "Cartão", "Dinheiro", "Financiamento"] as const;
 export const productCategories = ["Scooter elétrica", "Bicicleta elétrica", "Acessório", "Peça"] as const;
+export type TaxRate = { id: string; name: string; basisPoints: number; defaultForSale: boolean };
+export type SaleTax = { amount: number; name: string; basisPoints?: number };
 export type CardRate = { id: string; name: string; mode: "Débito" | "Crédito"; installments: number; basisPoints: number };
 export type AuditEvent = { id: string; actor: string; action: string; at: string };
 export type Testimonial = { id: string; author: string; quote: string };
@@ -51,7 +53,7 @@ export type Sale = {
   id: string; store: StoreId; productId: string; productName: string; sku: string;
   customer: string; contactId: string; quantity: number; unitPrice: number;
   discount: number; total: number; method: typeof paymentMethods[number];
-  lines?: SaleLine[]; payments?: SalePayment[]; cardFees?: number;
+  lines?: SaleLine[]; payments?: SalePayment[]; cardFees?: number; tax?: SaleTax;
   createdAt: string; canceledAt?: string; fiscalNotes?: string;
   sellerId?: string; sellerName?: string; commission?: number; cost?: number; missingCostUnits?: number; allocations?: StockLot[]; origin?: string;
 };
@@ -61,6 +63,7 @@ export type Movement = {
 };
 export type RetailState = {
   units?: Store[];
+  taxRates?: TaxRate[];
   staffAdvances?: StaffAdvance[];
   products: Product[]; contacts: Contact[]; sales: Sale[]; movements: Movement[]; purchases: Purchase[];
   cardRates: CardRate[]; audit: AuditEvent[]; testimonials: Testimonial[];
@@ -87,6 +90,10 @@ export function stockComposition(state: RetailState, filter = "", vehiclesOnly =
 }
 
 export class RetailError extends Error {}
+
+export function percentageAmount(base: number, basisPoints: number) {
+  return Number((BigInt(base) * BigInt(basisPoints) + BigInt(5000)) / BigInt(10000));
+}
 
 export function cardQuote(gross: number, rate: CardRate) {
   const fee = Math.round(gross * rate.basisPoints / 10000);
@@ -156,7 +163,7 @@ export function postMonthlyCosts(state: RetailState, store: StoreId, month: stri
 
 export function financialReport(state: RetailState, from: string, to: string, store?: StoreId) {
   const includes = (date: string) => date >= from && date <= to;
-  const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, fixed: 0, salary: 0, expenses: 0, other: 0, incoming: 0, outgoing: 0,
+  const rows = { revenue: 0, cost: 0, commissions: 0, cardFees: 0, taxes: 0, fixed: 0, salary: 0, expenses: 0, other: 0, incoming: 0, outgoing: 0,
     payable: 0, receivable: 0, overdue: 0, missingSales: 0 };
   for (const sale of state.sales) {
     if (store && sale.store !== store) continue;
@@ -166,6 +173,7 @@ export function financialReport(state: RetailState, from: string, to: string, st
     if (!sign) continue;
     rows.revenue += sign * sale.total;
     rows.cost += sign * (sale.cost ?? 0);
+    rows.taxes += sign * (sale.tax?.amount ?? 0);
     rows.cardFees += sign * (sale.cardFees ?? 0);
     rows.commissions += sign * (sale.commission ?? 0);
     if (sale.cost == null || sale.missingCostUnits) rows.missingSales++;
@@ -197,7 +205,7 @@ export function financialReport(state: RetailState, from: string, to: string, st
       if (includes(event.date)) rows[(entry.direction === "in") === (delta >= 0) ? "incoming" : "outgoing"] += Math.abs(delta);
     }
   }
-  return { ...rows, result: rows.revenue + rows.other - rows.cost - rows.commissions - rows.cardFees - rows.fixed - rows.salary - rows.expenses,
+  return { ...rows, result: rows.revenue + rows.other - rows.cost - rows.commissions - rows.cardFees - rows.taxes - rows.fixed - rows.salary - rows.expenses,
     cash: rows.incoming - rows.outgoing };
 }
 
@@ -230,7 +238,7 @@ export function modelMarginRanking(state: RetailState, from: string, to: string,
     if (sale.canceledAt || sale.cost == null || sale.missingCostUnits || date < from || date > to || (store && sale.store !== store)) continue;
     const lines = sale.lines ?? [{ ...sale, cost: sale.cost, gift: false }];
     const giftCost = lines.reduce((sum, line) => sum + (line.gift ? line.cost : 0), 0);
-    const sharedCost = giftCost + (sale.cardFees ?? 0) + (sale.commission ?? 0);
+    const sharedCost = giftCost + (sale.tax?.amount ?? 0) + (sale.cardFees ?? 0) + (sale.commission ?? 0);
     let revenue = 0;
     let allocated = 0;
     let first = true;
@@ -409,7 +417,7 @@ export function recordSale(state: RetailState, input: SaleInput, gift = false) {
 export type CheckoutItem = { productId: string; quantity: number; origin: string; gift: boolean };
 export type CheckoutPayment = { method: SalePayment["method"]; amount: number; received: boolean; due: string; rateId?: string };
 export type CheckoutInput = Omit<SaleInput, "productId" | "quantity" | "method" | "origin" | "receive"> & {
-  items: CheckoutItem[]; payments: CheckoutPayment[];
+  items: CheckoutItem[]; payments: CheckoutPayment[]; taxRateId?: string; manualTax?: number;
 };
 
 export function recordCheckout(state: RetailState, input: CheckoutInput) {
@@ -424,6 +432,14 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
     throw new RetailError("Confira o total dos itens e o desconto.");
   }
   const total = gross - input.discount;
+  const taxRates = state.taxRates ?? [];
+  const rate = input.taxRateId ? taxRates.find((item) => item.id === input.taxRateId) : taxRates.find((item) => item.defaultForSale);
+  if (input.manualTax === undefined && input.taxRateId && !rate) throw new RetailError("Imposto selecionado não encontrado.");
+  if (input.manualTax !== undefined && (!Number.isSafeInteger(input.manualTax) || input.manualTax < 0 || input.manualTax > total)) {
+    throw new RetailError("Informe um imposto entre zero e o total da venda.");
+  }
+  const tax = input.manualTax !== undefined ? { name: "Imposto manual", amount: input.manualTax }
+    : rate ? { name: rate.name, basisPoints: rate.basisPoints, amount: percentageAmount(total, rate.basisPoints) } : undefined;
   const payments: SalePayment[] = input.payments.map((payment) => {
     if (!Number.isSafeInteger(payment.amount) || payment.amount <= 0) throw new RetailError("Informe um valor positivo para cada pagamento.");
     if (!payment.received && (!isCalendarDate(payment.due) || payment.due < date)) throw new RetailError("Informe o vencimento dos pagamentos a receber.");
@@ -472,7 +488,7 @@ export function recordCheckout(state: RetailState, input: CheckoutInput) {
       amount: payment.amount, cardFee: payment.fee, date, due: payment.due,
       settlements: payment.received ? [{ id: id + "-received", amount: payment.amount, date }] : [] });
   }
-  draft.sales.unshift({ ...first, id: input.id, total, discount: input.discount, commission, lines, payments,
+  draft.sales.unshift({ ...first, id: input.id, total, discount: input.discount, commission, lines, payments, tax,
     cardFees: payments.reduce((sum, payment) => sum + payment.fee, 0), cost: sum("cost"), missingCostUnits: sum("missingCostUnits"),
     allocations: snapshots.flatMap(({ sale }) => sale.allocations ?? []) });
   Object.assign(state, draft);

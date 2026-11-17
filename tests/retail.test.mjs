@@ -179,3 +179,21 @@ test("venda combinada contabiliza taxa e brinde, baixa parcial e devolve o estoq
   assert.equal(state.products[0].stock.palhoca, 1);
   assert.equal(state.products[1].stock.palhoca, 1);
 });
+
+test("imposto padrão calcula sobre a venda com desconto e o manual aceita zero", () => {
+  const state = fixture();
+  state.products[0].purchaseCost = 300000;
+  state.taxRates = [{ id: "taxa", name: "Imposto de venda", basisPoints: 600, defaultForSale: true }];
+  const checkout = { ...input, items: [{ productId: "scooter", quantity: 1, gift: false, origin: "" }],
+    payments: [{ method: "Pix", amount: 589900, received: true, due: "" }] };
+  assert.throws(() => recordCheckout(state, { ...checkout, manualTax: 589901 }));
+  recordCheckout(state, checkout);
+  assert.deepEqual(state.sales[0].tax, { name: "Imposto de venda", amount: 35394, basisPoints: 600 });
+  state.taxRates[0].basisPoints = 1200;
+  const report = financialReport(state, "2026-11-07", "2026-11-07");
+  assert.equal(report.taxes, 35394);
+  assert.equal(report.cash, 589900);
+  assert.equal(report.result, 254506);
+  recordCheckout(state, { ...checkout, id: "venda-manual", store: "sao-jose", manualTax: 0 });
+  assert.equal(state.sales[0].tax.amount, 0);
+});

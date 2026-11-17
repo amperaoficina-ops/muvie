@@ -1,7 +1,7 @@
 export const modules = {
   visao: "Visão geral", produtos: "Produtos", estoque: "Estoque", compras: "Compras",
   vendas: "Vendas", financeiro: "Financeiro", lojas: "Administração das lojas", crm: "Clientes / CRM",
-  simulador: "Simular venda", taxas: "Taxas de cartão", usuarios: "Usuários", logs: "Log de ações",
+  simulador: "Simular venda", taxas: "Taxas de cartão", impostos: "Impostos", usuarios: "Usuários", logs: "Log de ações",
   funcionarios: "Funcionários", relatos: "Relatos da landing", consignados: "Consignados", catalogo: "Catálogo do site",
 } as const;
 export type Module = keyof typeof modules;
@@ -16,7 +16,7 @@ export type AccountAccess = { role?: Role; permissions?: Module[] | null; manage
 const defaults: Record<Role, readonly Module[]> = {
   admin: moduleKeys,
   sales: ["visao", "estoque", "vendas", "crm", "simulador"],
-  finance: ["visao", "compras", "vendas", "financeiro", "taxas", "consignados"],
+  finance: ["visao", "compras", "vendas", "financeiro", "taxas", "impostos", "consignados"],
   inventory: ["produtos", "estoque", "compras", "consignados"],
   staff: ["visao", "produtos", "estoque", "compras", "vendas", "crm", "simulador"],
 };

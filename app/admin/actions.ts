@@ -236,8 +236,11 @@ export async function saveSale(form: FormData) {
       const rates = form.getAll("checkoutRate");
       const statuses = form.getAll("checkoutStatus");
       const dates = form.getAll("checkoutDue");
+      const manualTax = form.get("taxMode") === "manual" ? value(form, "manualTax", 32) : undefined;
       recordCheckout(state, { id, store, customer, contactId, createdAt, discount: amount(form, "discount"),
         sellerId: value(form, "sellerId", 36, false),
+        taxRateId: value(form, "taxRateId", 36, false),
+        manualTax: manualTax === undefined ? undefined : amount(form, "manualTax"),
         items: products.map((productId, index) => ({ productId: String(productId), quantity: Number(quantities[index]),
           origin: String(origins[index] ?? ""), gift: kinds[index] === "gift" })),
         payments: methods.flatMap((method, index) => {
@@ -480,5 +483,25 @@ export async function saveSaleFiscalNotes(form: FormData) {
     const sale = state.sales.find((item) => item.id === id && !item.canceledAt);
     if (!sale) throw new RetailError("Venda ativa não encontrada.");
     sale.fiscalNotes = value(form, "fiscalNotes", 1500, false);
+  });
+}
+
+
+export async function saveTaxRate(form: FormData) {
+  const newId = randomUUID();
+  await commit(form, "impostos", "Imposto salvo.", (state) => {
+    const id = value(form, "id", 36, false);
+    const rates = state.taxRates ??= [];
+    const current = rates.find((item) => item.id === id);
+    if (id && !current) throw new RetailError("Imposto não encontrado.");
+    const name = value(form, "name", 70);
+    value(form, "percent", 8);
+    const basisPoints = amount(form, "percent");
+    if (basisPoints > 10000) throw new RetailError("Informe uma alíquota de até 100%.");
+    const defaultForSale = form.get("defaultForSale") === "on";
+    if (defaultForSale) for (const rate of rates) rate.defaultForSale = false;
+    const fields = { name, basisPoints, defaultForSale };
+    if (current) Object.assign(current, fields);
+    else rates.push({ id: newId, ...fields });
   });
 }

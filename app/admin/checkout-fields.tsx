@@ -1,25 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { money, paymentMethods, cardQuote, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
+import { money, paymentMethods, cardQuote, percentageAmount, type TaxRate, type CardRate, type Product, type StockLot, type Store } from "@/domain/retail";
 import { parseReais } from "@/domain/money-input";
 
 type Item = { key: number; productId: string; quantity: number; gift: boolean; origin: string };
 type Payment = { key: number; method: typeof paymentMethods[number]; value: string; rateId: string; received: boolean; due: string };
 type SaleProduct = Pick<Product, "id" | "name" | "sku" | "price" | "stock" | "purchaseCost">;
 
-export function CheckoutFields({ units, initialStore, products, lots, rates, sellers, showCost }: {
-  units: readonly Store[]; initialStore: string; products: SaleProduct[]; lots: StockLot[]; rates: CardRate[]; sellers: { id: string; name: string; store: string; commissionBps: number }[]; showCost: boolean;
+export function CheckoutFields({ units, initialStore, products, lots, rates, sellers, showCost, taxRates }: {
+  units: readonly Store[]; initialStore: string; products: SaleProduct[]; lots: StockLot[]; rates: CardRate[]; taxRates: TaxRate[]; sellers: { id: string; name: string; store: string; commissionBps: number }[]; showCost: boolean;
 }) {
   const [store, setStore] = useState(initialStore);
   const [items, setItems] = useState<Item[]>([{ key: 0, productId: "", quantity: 1, gift: false, origin: "" }]);
   const [payments, setPayments] = useState<Payment[]>([{ key: 0, method: "Pix", value: "", rateId: "", received: true, due: "" }]);
   const [sellerId, setSeller] = useState("");
+  const defaultTax = taxRates.find((rate) => rate.defaultForSale);
+  const [taxMode, setTaxMode] = useState(defaultTax?.id ?? "");
+  const [manualTax, setManualTax] = useState("");
   const [discount, setDiscount] = useState("");
   const available = products.filter((product) => (product.stock[store] ?? 0) > 0);
   const availableLots = lots.filter((lot) => lot.store === store && lot.quantity > 0).sort((a, b) => a.date.localeCompare(b.date));
   const gross = items.reduce((sum, item) => sum + (item.gift ? 0 : (products.find((product) => product.id === item.productId)?.price ?? 0) * item.quantity), 0);
   const total = Math.max(gross - (parseReais(discount) ?? 0), 0);
+  const selectedTax = taxRates.find((rate) => rate.id === taxMode);
+  const tax = taxMode === "manual" ? parseReais(manualTax) ?? 0 : percentageAmount(total, selectedTax?.basisPoints ?? defaultTax?.basisPoints ?? 0);
   const usedLots = new Map<string, number>();
   let cost = 0;
   let missingCost = false;
@@ -91,15 +96,28 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, sel
       </div>)}
       <button type="button" className="button" disabled={payments.length >= 12} onClick={() => setPayments([...payments, { key: Math.max(...payments.map((row) => row.key)) + 1, method: "Pix", value: "", rateId: "", received: true, due: "" }])}>＋ Adicionar pagamento</button>
     </fieldset>
+    <fieldset className="address-fields span-two checkout-group">
+      <legend>Imposto da venda</legend>
+      <label>Como calcular<select value={taxMode} onChange={(event) => setTaxMode(event.target.value)}>
+        <option value="">{defaultTax ? "Usar imposto padrão" : "Sem alíquota cadastrada"}</option>
+        {taxRates.map((rate) => <option key={rate.id} value={rate.id}>{rate.name} · {(rate.basisPoints / 100).toLocaleString("pt-BR")}%{rate.defaultForSale ? " · padrão" : ""}</option>)}
+        <option value="manual">Informar valor manual</option>
+      </select></label>
+      <input type="hidden" name="taxRateId" value={taxMode === "manual" ? "" : taxMode} />
+      <input type="hidden" name="taxMode" value={taxMode === "manual" ? "manual" : "rate"} />
+      {taxMode === "manual" ? <label>Imposto (R$)<input name="manualTax" inputMode="decimal" required maxLength={32} value={manualTax} onChange={(event) => setManualTax(event.target.value)} /></label>
+        : <p className="form-note">Imposto estimado sobre o valor após desconto: <strong>{money(tax)}</strong></p>}
+    </fieldset>
     <div className="dashboard-values checkout-summary span-two">
       <div><p>Total da venda</p><strong>{money(total)}</strong></div>
+      <div><p>Imposto estimado</p><strong>{money(tax)}</strong></div>
       <div><p>Taxas de cartão</p><strong>{money(fees)}</strong></div>
       <div><p>Recebido líquido estimado</p><strong>{money(receivedGross - receivedFees)}</strong></div>
       <div><p>A receber</p><strong>{money(entered - receivedGross)}</strong></div>
       {showCost && <>
         <div><p>Custo dos itens e brindes</p><strong>{money(cost)}</strong>{missingCost && <small>Há itens sem custo cadastrado</small>}</div>
         <div><p>Comissão estimada</p><strong>{money(commission)}</strong></div>
-        <div><p>Margem estimada da venda</p><strong>{missingCost ? "Custo incompleto" : money(total - fees - cost - commission)}</strong></div>
+        <div><p>Margem estimada da venda</p><strong>{missingCost ? "Custo incompleto" : money(total - fees - tax - cost - commission)}</strong></div>
       </>}
       {entered !== total && <div><p>{entered < total ? "Falta distribuir" : "Valor acima do total"}</p><strong>{money(Math.abs(total - entered))}</strong></div>}
     </div>

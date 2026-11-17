@@ -1,3 +1,4 @@
+import { TaxSettings } from "./tax-settings";
 import { CheckoutFields } from "./checkout-fields";
 import { SaleDialog } from "./sale-dialog";
 import { AttachmentPicker } from "./attachment-picker";
@@ -40,6 +41,7 @@ const nav = [
   { id: "lojas", label: "Todas as lojas", icon: "pin", description: "Cadastre unidades e configure equipe, custos fixos e estrutura.", admin: true },
   { id: "crm", label: "Clientes / CRM", icon: "users", description: "Consulte fichas, histórico de compras e vendas, documentos e retornos por unidade." },
   { id: "simulador", label: "Simular venda", icon: "bolt", description: "Monte uma proposta de cartão durante o atendimento com produtos em estoque." },
+  { id: "impostos", label: "Impostos", icon: "bag", description: "Configure alíquotas e o imposto padrão das novas vendas." },
   { id: "taxas", label: "Taxas de cartão", icon: "bag", description: "Cadastre e ajuste as condições de débito e crédito das maquininhas.", admin: true },
   { id: "usuarios", label: "Usuários", icon: "users", description: "Gerencie o acesso da equipe de atendimento.", admin: true },
   { id: "logs", label: "Log de ações", icon: "grid", description: "Confira as operações registradas e quem as realizou.", admin: true },
@@ -50,7 +52,7 @@ const nav = [
 type Tab = typeof nav[number]["id"];
 const navGroups: { title: string; tabs: Tab[] }[] = [
   { title: "Operação", tabs: ["visao", "vendas", "simulador", "crm", "produtos", "estoque", "consignados", "compras"] },
-  { title: "Gestão", tabs: ["funcionarios", "financeiro", "taxas", "usuarios", "logs"] },
+  { title: "Gestão", tabs: ["funcionarios", "financeiro", "taxas", "impostos", "usuarios", "logs"] },
   { title: "Lojas", tabs: ["lojas"] },
   { title: "Landing page", tabs: ["catalogo", "relatos"] },
 ];
@@ -408,7 +410,7 @@ function Sales({ state, filter, invoices, focus, error, showCost }: { state: Ret
       {products.length ? <form className="admin-form" action={saveSale}>
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
         <SaleCustomer contacts={contacts.map((contact) => ({ id: contact.id, label: contact.name + " · " + storeName(contact.store, state) }))} />
-        <CheckoutFields units={storeList(state)} initialStore={filter} rates={state.cardRates}
+        <CheckoutFields units={storeList(state)} initialStore={filter} rates={state.cardRates} taxRates={state.taxRates ?? []}
           products={state.products.map(({ id, name, sku, price, stock, purchaseCost }) => ({ id, name, sku, price, stock, purchaseCost: showCost ? purchaseCost : undefined }))}
           showCost={showCost}
           sellers={state.staff.filter((item) => item.active && (!filter || item.store === filter)).map(({ id, name, store, commissionBps }) => ({ id, name, store, commissionBps: showCost ? commissionBps : 0 }))}
@@ -549,7 +551,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
         <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>
           {!denied && state && primary && <a className="button yellow" href={"#" + primary.target}>＋ {primary.label}</a>}
           {!denied && state && active.id === "lojas" && !filter && <UnitDialog />}
-          {!denied && !["lojas", "taxas", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <div className="admin-filter-bar"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
+          {!denied && !["lojas", "taxas", "impostos", "usuarios", "logs", "relatos", "catalogo", "produtos", "simulador"].includes(active.id) && <div className="admin-filter-bar"><span>Unidade</span><nav className="branch-filter" aria-label="Filtrar por unidade">
             <Link aria-current={!filter ? "true" : undefined} href={adminUrl(active.id) + periodQuery + categoryQuery}>Todas</Link>
             {storeList(state ?? undefined).map((store) => <Link aria-current={filter === store.id ? "true" : undefined} href={adminUrl(active.id, store.id) + periodQuery + categoryQuery} key={store.id}>{store.name}</Link>)}
           </nav></div>}
@@ -590,6 +592,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "simulador" && <Simulator stores={storeList(state)} key={filter} initialStore={filter || "sao-jose"} rates={state.cardRates}
             products={state.products.map(({ id, name, sku, price, stock }) => ({ id, name, sku, price, stock }))} />}
           {active.id === "taxas" && <CardSettings state={state} />}
+          {active.id === "impostos" && <TaxSettings rates={state.taxRates ?? []} />}
           {active.id === "relatos" && <TestimonialsSettings state={state} />}
           {active.id === "usuarios" && (users ? <UsersPanel users={users} actor={user} /> : <p role="alert">Não foi possível carregar os usuários.</p>)}
           {active.id === "logs" && <section className="panel"><div className="panel-title"><h2>Atividade da equipe</h2><span className="pill">Últimas 200 na tela</span></div>
