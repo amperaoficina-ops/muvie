@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import Image from "next/image";
 import { Brand, Icon } from "../brand";
-import { signOut } from "../login/actions";
+import { SignOutDialog } from "./sign-out-dialog";
 import { requireUser, type User } from "@/lib/auth";
 import { getMongoDb } from "@/lib/mongodb";
 import { listInvoices, type InvoiceMeta, type InvoiceOwner } from "@/lib/invoices";
@@ -559,7 +559,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const requested = nav.find((item) => item.id === params.tab);
   const denied = !!requested && !canAccess(user, requested.id);
   const active = (denied ? undefined : requested) ?? visibleNav[0];
-  if (!active) return <main className="admin-content"><h1>Acesso ao painel</h1><p>Nenhum módulo está liberado para esta conta.</p><form action={signOut}><button className="button yellow">Sair</button></form></main>;
+  if (!active) return <main className="admin-content"><h1>Acesso ao painel</h1><p>Nenhum módulo está liberado para esta conta.</p><SignOutDialog /></main>;
   const showSales = canAccess(user, "vendas");
   const showPurchases = canAccess(user, "compras");
   const period = reportPeriod(params.inicio, params.fim);
@@ -601,13 +601,16 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             href={adminUrl("lojas", unit.id)}><Icon name="pin" size={19} />{unit.label}</Link>) : <Link aria-current={active.id === item.id ? "page" : undefined} href={adminUrl(item.id, filter)} key={item.id}><Icon name={item.icon} size={19} />{item.label}</Link>)}
         </div>;
       })}</nav>
-      <Link className="sidebar-footer" href="/">Ver landing page <Icon name="external" size={16} /></Link>
+      <div className="sidebar-footer-actions">
+        <Link className="sidebar-footer" href="/">Ver landing page <Icon name="external" size={16} /></Link>
+        <SignOutDialog />
+      </div>
     </aside>;
 
   return <div className="admin-shell">
     <div className="desktop-admin-menu">{sidebar}</div>
     <div className="admin-main">
-      <header className="admin-top"><MobileMenu>{sidebar}</MobileMenu><p><span>Muvi-E</span> / {group}</p><div><span>{user.name}</span><form action={signOut}><button type="submit">Sair</button></form></div></header>
+      <div className="admin-top admin-mobile-toolbar"><MobileMenu>{sidebar}</MobileMenu></div>
       <main className="admin-content">
         {process.env.MUVIE_DEMO === "1" && <p className="feedback success">Ambiente de demonstração · os dados são fictícios e separados do banco da loja.</p>}
         <div className="admin-heading"><div><p className="eyebrow">{group}</p><h1>{denied ? "Acesso restrito" : heading}</h1><p>{denied ? "Sua conta não tem acesso ao módulo solicitado." : active.description}</p></div>

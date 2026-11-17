@@ -468,3 +468,12 @@ body:has(.sale-dialog[open]) { overflow: hidden; }
 .sale-payment-lines dd { margin: 0; text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
 .sale-detail-card .sale-download { display: flex; justify-content: space-between; gap: .5rem; width: 100%; min-height: 44px; height: auto; white-space: normal; text-align: left; }
 .sale-download .pill { flex-shrink: 0; }
+
+.admin-shell .admin-mobile-toolbar { display: none; }
+.sidebar-footer-actions { display: grid; gap: .4rem; margin-top: auto; }
+.sidebar .sidebar-sign-out { justify-content: flex-start; color: #fff; border-color: #565966; background: transparent; min-height: 44px; }
+.sidebar .sidebar-sign-out:hover { background: #272a32; }
+.sign-out-dialog { color: var(--ink); width: min(calc(100% - 2rem), 390px); }
+.sign-out-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .65rem; padding: 1rem; }
+.admin-mobile-toolbar .sign-out-dialog .button { padding: .55rem .8rem; }
+@media (max-width: 850px) { .admin-shell .admin-mobile-toolbar { display: flex; } }
