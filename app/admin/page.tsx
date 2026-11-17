@@ -400,7 +400,11 @@ function Sales({ state, filter, invoices, focus }: { state: RetailState; filter:
     <section id="nova-venda" className="panel"><div className="panel-title"><h2>Nova venda</h2></div>
       {products.length ? <form className="admin-form" action={saveSale}>
         <FilterInput filter={filter} /><input type="hidden" name="saleId" value={saleId} /><input type="hidden" name="focus" value={saleId} />
-        <StoreField units={storeList(state)} filter={filter} /><ProductField products={products} />
+        {filter ? <label>Unidade
+          <input value={storeName(filter, state)} readOnly />
+          <input type="hidden" name="store" value={filter} />
+        </label> : <StoreField units={storeList(state)} filter="" />}
+        <ProductField products={products} />
         <SaleCustomer contacts={contacts.map((contact) => ({ id: contact.id, label: contact.name + " · " + storeName(contact.store, state) }))} />
         <label>Quantidade<input name="quantity" type="number" min="1" max="999999" defaultValue="1" required /></label>
         <label>Desconto em reais<input name="discount" type="number" min="0" step=".01" placeholder="0,00" /></label>
