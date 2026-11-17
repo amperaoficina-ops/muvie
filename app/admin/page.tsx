@@ -60,7 +60,6 @@ const navGroups: { title: string; tabs: Tab[] }[] = [
 const moduleActions: Partial<Record<Tab, { label: string; target: string }>> = {
   produtos: { label: "Novo produto", target: "novo-produto" },
   compras: { label: "Registrar compra", target: "registrar-compra" },
-  estoque: { label: "Movimentar estoque", target: "movimentar-estoque" },
   vendas: { label: "Nova venda", target: "nova-venda" },
   crm: { label: "Novo cliente", target: "novo-cliente" },
   financeiro: { label: "Novo compromisso", target: "novo-compromisso" },
@@ -330,29 +329,27 @@ function Stock({ state, filter, category, showPurchases, movementPage, query }: 
         {item ?? "Todas as categorias"}
       </Link>)}
     </nav>
-    <div className="operation-grid">
-      <section className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
-        {products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td>{columns.map((store) => <td key={store.id}>
-          <strong>{product.stock[store.id] ?? 0} un.</strong>
-          {(product.stock[store.id] ?? 0) > 0 && <div className="inventory-tags">
-            {(() => {
-              const consigned = lots.filter((lot) => lot.store === store.id && lot.productId === product.id && lot.consigned)
-                .reduce((sum, lot) => sum + lot.quantity, 0);
-              const owned = (product.stock[store.id] ?? 0) - consigned;
-              return <>{consigned > 0 && <span className="pill consigned">{consigned} consignado</span>}
-                {owned > 0 && <span className="pill">{owned} próprio / avulso</span>}</>;
-            })()}
-          </div>}
-        </td>)}</tr>)}</Table> : <Empty>Nenhum produto nesta seleção.</Empty>}
-      </section>
-      <section id="movimentar-estoque" className="panel"><div className="panel-title"><h2>Movimentar estoque</h2>{showPurchases && <Link className="back-link" href={adminUrl("compras", filter) + "#registrar-compra"}>Dar entrada por compra →</Link>}</div>
-        {products.length ? <form action={updateStock} className="admin-form">
-          <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><ProductField products={products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
-          <StockFields units={storeList(state)} />
-          <div className="span-two"><Submit>Salvar operação</Submit></div>
-        </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
-      </section>
-    </div>
+    <section id="movimentar-estoque" className="panel"><div className="panel-title"><h2>Movimentar estoque</h2></div>
+      {products.length ? <form action={updateStock} className="admin-form">
+        <FilterInput filter={filter} /><input type="hidden" name="stockCategory" value={category ?? ""} /><ProductField products={products} /><StoreField units={storeList(state)} filter={filter} label="Unidade de origem ou ajuste" />
+        <StockFields units={storeList(state)} />
+        <div className="span-two"><Submit>Salvar operação</Submit></div>
+      </form> : <Empty><Link href={adminUrl("produtos", filter)}>Ir para Produtos →</Link></Empty>}
+    </section>
+    <section className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
+      {products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td>{columns.map((store) => <td key={store.id}>
+        <strong>{product.stock[store.id] ?? 0} un.</strong>
+        {(product.stock[store.id] ?? 0) > 0 && <div className="inventory-tags">
+          {(() => {
+            const consigned = lots.filter((lot) => lot.store === store.id && lot.productId === product.id && lot.consigned)
+              .reduce((sum, lot) => sum + lot.quantity, 0);
+            const owned = (product.stock[store.id] ?? 0) - consigned;
+            return <>{consigned > 0 && <span className="pill consigned">{consigned} consignado</span>}
+              {owned > 0 && <span className="pill">{owned} próprio / avulso</span>}</>;
+          })()}
+        </div>}
+      </td>)}</tr>)}</Table> : <Empty>Nenhum produto nesta seleção.</Empty>}
+    </section>
     <section id="lotes-estoque" className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
       {lots.length ? <Table headers={["Produto", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
