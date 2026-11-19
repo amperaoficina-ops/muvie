@@ -1175,3 +1175,16 @@ export function deleteProduct(state: RetailState, id: string) {
   if (referenced) throw new RetailError("Este produto tem compras, vendas ou movimentações vinculadas. A exclusão comprometeria o histórico. Você pode despublicá-lo do catálogo.");
   state.products = state.products.filter((item) => item.id !== id);
 }
+
+export function removeLotUnits(state: RetailState, input: {
+  movementId: string; productId: string; store: StoreId; origin: string; quantity: number; reason: string; createdAt: string;
+}) {
+  if (state.movements.some((movement) => movement.id === input.movementId)) return;
+  if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0 || !input.reason.trim()) {
+    throw new RetailError("Informe a quantidade e o motivo da correção.");
+  }
+  const lot = stockLotForMovement(state, input.productId, input.store, input.origin, input.quantity);
+  changeStock(state, input.productId, input.store, -input.quantity, "Correção de entrada · " + input.reason.trim(),
+    input.movementId, input.createdAt, lot.purchaseId);
+  lot.quantity -= input.quantity;
+}

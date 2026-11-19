@@ -418,3 +418,21 @@ test("exclusão de produto remove cadastro vazio e protege saldo e histórico", 
   assert.throws(() => deleteProduct(state, "keep"), /histórico/);
   assert.equal(state.products.length, 1);
 });
+
+test("correção do lote remove apenas a cor escolhida e preserva o financeiro sem duplicar na repetição", async () => {
+  const { removeLotUnits } = await import("../domain/retail.ts");
+  const state = emptyRetailState();
+  state.products.push({ id: "p", name: "Scooter", stock: { palhoca: 5 } });
+  state.stockLots.push(
+    { purchaseId: "compra", variantId: "vermelho", productId: "p", store: "palhoca", color: "Vermelho", quantity: 3 },
+    { purchaseId: "compra", variantId: "azul", productId: "p", store: "palhoca", color: "Azul", quantity: 2 });
+  const input = { movementId: "ajuste", createdAt: date, productId: "p", store: "palhoca", origin: "vermelho", quantity: 2, reason: "Duplicado" };
+  const ledger = structuredClone(state.ledger);
+  assert.throws(() => removeLotUnits(state, { ...input, quantity: 4 }), /saldo/);
+  removeLotUnits(state, input);
+  removeLotUnits(state, input);
+  assert.equal(state.products[0].stock.palhoca, 3);
+  assert.deepEqual(state.stockLots.map((lot) => lot.quantity), [1, 2]);
+  assert.equal(state.movements.length, 1);
+  assert.deepEqual(state.ledger, ledger);
+});

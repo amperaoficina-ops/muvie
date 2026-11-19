@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  deleteProduct, correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, submitStoreSale, reviewStoreSale, cardReceivables, reconcileCardReceipt, sellerMinimumProfit, saleNetProfit, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
+  removeLotUnits, deleteProduct, correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, submitStoreSale, reviewStoreSale, cardReceivables, reconcileCardReceipt, sellerMinimumProfit, saleNetProfit, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -971,6 +971,21 @@ export async function saveStockSalePrice(form: FormData) {
       const product = state.products.find((item) => item.id === id);
       if (!product) throw new RetailError("Produto não encontrado.");
       product.price = price;
+    });
+  }, true);
+}
+
+export async function removeStockLotUnits(form: FormData) {
+  const createdAt = new Date().toISOString();
+  await runAction(form, "estoque", "Unidades removidas do lote.", async (user) => {
+    if (!isDirector(user)) throw new RetailError("Somente a Diretoria pode remover unidades do lote.");
+    if (form.get("confirmed") !== "on") throw new RetailError("Confirme a remoção das unidades.");
+    const movementId = value(form, "movementId", 36);
+    if (!uuidPattern.test(movementId)) throw new RetailError("Atualize a página antes de corrigir o lote.");
+    await editWithAudit(user, "Remove unidades do lote " + value(form, "origin", 140), (state) => {
+      removeLotUnits(state, { movementId, createdAt, productId: value(form, "productId", 36),
+        store: choice(form, "store", storeIds(state)), origin: value(form, "origin", 140),
+        quantity: units(form), reason: value(form, "reason", 200) });
     });
   }, true);
 }

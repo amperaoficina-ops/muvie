@@ -25,7 +25,7 @@ import {
   canCorrectLegacySale, historicalPayments, needsHistoricalPurchasePayment, balanceDue, businessDate, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { saveStockSalePrice, removeProduct, attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, reviewSaleApproval, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
+import { removeStockLotUnits, saveStockSalePrice, removeProduct, attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, reviewSaleApproval, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -742,7 +742,22 @@ function Stock({ state, filter, category, showPurchases, showCost, movementPage,
               <p className="form-note span-two">Preço deste produto em todas as unidades e no catálogo do site. Novas vendas usarão este valor.</p>
               <div className="span-two"><Submit>Salvar preço de venda</Submit></div>
             </form>
-          </DetailsDialog>}</td>}</tr>;
+          </DetailsDialog>}
+            <DetailsDialog id={"remover-lote-" + stockLotId(lot) + lot.store} title="Remover unidades do lote" trigger="Remover unidades" danger>
+              <form className="admin-form" action={removeStockLotUnits}>
+                <FilterInput filter={filter} /><input type="hidden" name="productId" value={lot.productId} />
+                <input type="hidden" name="store" value={lot.store} /><input type="hidden" name="origin" value={stockLotId(lot)} />
+                <input type="hidden" name="movementId" value={randomUUID()} /><input type="hidden" name="stockView" value="lotes" />
+                <input type="hidden" name="stockCategory" value={category ?? ""} /><input type="hidden" name="stockSearch" value={query} />
+                <p className="span-two">{product?.name ?? lot.productId} · {lot.color ?? "Sem cor definida"} · {storeName(lot.store, state)} · Saldo: {lot.quantity} un.</p>
+                <label>Quantidade a remover<input name="quantity" type="number" min={1} max={lot.quantity} required /></label>
+                <label className="span-two">Motivo<input name="reason" maxLength={200} required placeholder="Ex. Entrada antiga lançada em duplicidade" /></label>
+                <p className="form-note span-two">Esta correção reduz o saldo deste lote e cor e fica no histórico de movimentações. O valor da compra e os pagamentos registrados são mantidos.</p>
+                <label className="checkbox span-two"><input type="checkbox" name="confirmed" required /> Confirmo a remoção das unidades informadas</label>
+                <div className="span-two"><Submit variant="danger">Confirmar remoção</Submit></div>
+              </form>
+            </DetailsDialog>
+          </td>}</tr>;
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
       <StockPagination name="lotes em estoque" page={stockLots} href={(number) => pageUrl("lotesPagina", number, "lotes-estoque")} />
       <p className="admin-empty">Para vender unidades antigas sem lote, registre a compra em Compras e marque a opção de vincular ao saldo já existente.</p>
