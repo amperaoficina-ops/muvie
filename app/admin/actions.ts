@@ -167,10 +167,14 @@ export async function saveProduct(form: FormData) {
     if (state.products.some((product) => product.sku === sku && product.id !== id)) throw new RetailError("Já existe um produto com este SKU.");
     const imageUrl = uploaded ?? (form.get("removePhoto") === "on" ? "" : current?.imageUrl ?? "");
     const category = choice(form, "category", productCategories);
+    const requestedPrice = amount(form, "price");
+    if (!isDirector(user) && requestedPrice !== (current?.price ?? 0)) {
+      throw new RetailError("Somente a Diretoria pode definir ou alterar o preço de venda. Cadastre o produto com preço zero para precificar depois.");
+    }
     const fields = {
       sku, name: value(form, "name", 100), category,
       specs: category === scooterCategory ? { ...readScooterSpecs(form), ...(current?.specs?.colors ? { colors: current.specs.colors } : {}) } : null,
-      price: amount(form, "price"),
+      price: requestedPrice,
       purchaseCost: current?.purchaseCost ?? null,
       description: value(form, "description", 350, false),
       published: current?.published ?? false, imageUrl,
@@ -369,8 +373,6 @@ export async function saveSale(form: FormData) {
       const products = form.getAll("checkoutProduct");
       const quantities = form.getAll("checkoutQuantity");
       const origins = form.getAll("checkoutOrigin");
-      const overrides = form.getAll("checkoutCost");
-      if ((restricted || !canAccess(user, "financeiro")) && overrides.some((item) => String(item).trim())) throw new RetailError("Sem permissão para editar custos.");
       const kinds = form.getAll("checkoutKind");
       if (restricted && (kinds.length !== products.length || kinds.some((kind) => kind !== "sale" && kind !== "gift"))) {
         throw new RetailError("Selecione o tipo de cada item da venda.");
@@ -388,8 +390,7 @@ export async function saveSale(form: FormData) {
         taxRateId: restricted ? defaultTax?.id : value(form, "taxRateId", 36, false),
         manualTax: manualTax === undefined ? undefined : amount(form, "manualTax"),
         items: products.map((productId, index) => ({ productId: String(productId), quantity: Number(quantities[index]),
-          origin: String(origins[index] ?? ""), gift: kinds[index] === "gift",
-          unitCostOverride: String(overrides[index] ?? "").trim() ? parseReais(String(overrides[index])) ?? -1 : undefined })),
+          origin: String(origins[index] ?? ""), gift: kinds[index] === "gift" })),
         payments: methods.flatMap((method, index) => {
           const matched = paymentMethods.find((item) => item === method);
           const paid = parseReais(String(amounts[index] ?? ""));
@@ -958,5 +959,18 @@ export async function removeProduct(form: FormData) {
     const id = value(form, "focus", 36);
     if (form.get("confirmed") !== "on") throw new RetailError("Confirme a exclusão do produto.");
     await editWithAudit(user, "Exclui produto " + id, (state) => deleteProduct(state, id));
+  }, true);
+}
+
+export async function saveStockSalePrice(form: FormData) {
+  await runAction(form, "estoque", "Preço de venda atualizado.", async (user) => {
+    if (!isDirector(user)) throw new RetailError("Somente a Diretoria pode alterar o preço de venda.");
+    const id = value(form, "productId", 36);
+    const price = amount(form, "price");
+    await editWithAudit(user, "Atualiza preço de venda do produto " + id, (state) => {
+      const product = state.products.find((item) => item.id === id);
+      if (!product) throw new RetailError("Produto não encontrado.");
+      product.price = price;
+    });
   }, true);
 }

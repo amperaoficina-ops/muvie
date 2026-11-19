@@ -41,9 +41,8 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
       remaining -= quantity;
       usedLots.set(stockLotId(lot), (usedLots.get(stockLotId(lot)) ?? 0) + quantity);
     }
-    const override = item.override?.trim() ? parseReais(item.override) : lotCost;
-    if (remaining || override === null) missingCost = true;
-    else cost += item.override?.trim() ? override * item.quantity : override;
+    if (remaining) missingCost = true;
+    else cost += lotCost;
   }
   const amounts = completePaymentAmounts(total, payments.map((payment) => payment.value));
   const fees = payments.reduce((sum, payment, index) => {
@@ -65,7 +64,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
       : <label>Unidade<select required value={store} onChange={(event) => {
         setStore(event.target.value);
         setSeller("");
-        setItems(items.map((item) => ({ ...item, productId: "", origin: "", purchaseId: "", override: "" })));
+        setItems(items.map((item) => ({ ...item, productId: "", origin: "", purchaseId: "" })));
       }}><option value="">Selecione a unidade</option>{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
     <input type="hidden" name="store" value={store} />
     <label>Vendedor da unidade<SearchSelect name="sellerId" required={restricted} value={sellerId} onChange={(event) => setSeller(event.target.value)}>
@@ -83,19 +82,19 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
           .reduce((sum, row) => sum + row.quantity, 0);
         const remaining = selected ? Math.max(0, selected.quantity - usedElsewhere) : 0;
         return <div className="checkout-row span-two" key={item.key}>
-        <label>Produto<SearchSelect name="checkoutProduct" required value={item.productId} onChange={(event) => patchItem(item.key, { productId: event.target.value, origin: "", purchaseId: "", override: "" })}>
+        <label>Produto<SearchSelect name="checkoutProduct" required value={item.productId} onChange={(event) => patchItem(item.key, { productId: event.target.value, origin: "", purchaseId: "" })}>
           <option value="">Selecione</option>{available.filter((product) => item.gift || product.price > 0).map((product) => <option key={product.id} value={product.id}>{product.name} · {money(product.price)} · {product.stock[store]} un.</option>)}</SearchSelect></label>
         <label>Quantidade<input name="checkoutQuantity" type="number" min="1" max={selected ? remaining : 999999} required value={item.quantity || ""} onChange={(event) => patchItem(item.key, { quantity: Number(event.target.value) })} /></label>
-        <label>Tipo<SearchSelect name="checkoutKind" value={item.gift ? "gift" : "sale"} onChange={(event) => patchItem(item.key, { gift: event.target.value === "gift", productId: "", origin: "", purchaseId: "", override: "" })}>
+        <label>Tipo<SearchSelect name="checkoutKind" value={item.gift ? "gift" : "sale"} onChange={(event) => patchItem(item.key, { gift: event.target.value === "gift", productId: "", origin: "", purchaseId: "" })}>
           <option value="sale">Venda</option><option value="gift">Brinde</option></SearchSelect></label>
-        <label>Lote da compra<SearchSelect required value={item.purchaseId ?? ""} onChange={(event) => patchItem(item.key, { purchaseId: event.target.value, origin: "", override: "" })}>
+        <label>Lote da compra<SearchSelect required value={item.purchaseId ?? ""} onChange={(event) => patchItem(item.key, { purchaseId: event.target.value, origin: "" })}>
           <option value="">Selecione o lote</option>
           {purchases.map((lot) => <option key={lot.purchaseId} value={lot.purchaseId}>
             {lot.supplier} · {lot.date.split("-").reverse().join("/")} · {lot.consigned ? "Consignado" : "Próprio"} · {productLots.filter((row) => row.purchaseId === lot.purchaseId).reduce((sum, row) => sum + row.quantity, 0)} un. · {lot.purchaseId.slice(0, 8)}
           </option>)}
         </SearchSelect></label>
         <label>Cor do lote<SearchSelect name="checkoutOrigin" required value={item.origin}
-          onChange={(event) => patchItem(item.key, { origin: event.target.value, override: "" })}>
+          onChange={(event) => patchItem(item.key, { origin: event.target.value })}>
           <option value="">{item.purchaseId ? "Selecione a cor" : "Selecione o lote primeiro"}</option>
           {colorLots.map((lot) => {
             const used = items.filter((row) => row.key !== item.key && row.productId === item.productId && row.origin === stockLotId(lot))
@@ -107,8 +106,7 @@ export function CheckoutFields({ units, initialStore, products, lots, rates, mac
           })}
         </SearchSelect></label>
         {selected && <p className="form-note">Disponível nesta cor: {remaining} un.</p>}
-        {showCost && <label>Ajustar custo unitário (R$)<input name="checkoutCost" inputMode="decimal" maxLength={32} placeholder="Usar custo do lote"
-          value={item.override ?? ""} onChange={(event) => patchItem(item.key, { override: event.target.value })} /></label>}
+        <label>Preço de venda unitário (R$)<input readOnly value={money(products.find((product) => product.id === item.productId)?.price ?? 0)} /></label>
         {item.productId && !availableLots.some((lot) => lot.productId === item.productId) && <p className="form-note span-two">Saldo sem lote. Vincule as unidades antigas a uma compra antes de vender.</p>}
         {index > 0 && <button type="button" className="button danger" onClick={() => setItems(items.filter((row) => row.key !== item.key))}>Remover item</button>}
       </div>;

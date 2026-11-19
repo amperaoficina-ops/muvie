@@ -25,7 +25,7 @@ import {
   canCorrectLegacySale, historicalPayments, needsHistoricalPurchasePayment, balanceDue, businessDate, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { removeProduct, attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, reviewSaleApproval, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
+import { saveStockSalePrice, removeProduct, attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, reviewSaleApproval, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -621,7 +621,7 @@ function StockPagination({ name, page, href }: { name: string; page: ReturnType<
   </nav>;
 }
 
-function Stock({ state, filter, category, showPurchases, showCost, movementPage, balancePage, lotPage, query, view, error }: { state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; showCost: boolean; movementPage?: string; balancePage?: string; lotPage?: string; query: string; view: string; error?: string }) {
+function Stock({ state, filter, category, showPurchases, showCost, movementPage, balancePage, lotPage, query, view, error, canEditPrice }: { canEditPrice: boolean; state: RetailState; filter: Filter; category?: Product["category"]; showPurchases: boolean; showCost: boolean; movementPage?: string; balancePage?: string; lotPage?: string; query: string; view: string; error?: string }) {
   const products = state.products.filter((product) => (!category || product.category === category) && matchesSearch(query, product.name, product.sku, product.category));
   const ids = new Set(products.map((product) => product.id));
   const columns = storeList(state).filter((store) => !filter || filter === store.id);
@@ -699,7 +699,17 @@ function Stock({ state, filter, category, showPurchases, showCost, movementPage,
     </CreateDialog>
     {view === "produtos" && <section id="saldos-estoque" className="panel"><div className="panel-title"><h2>Saldos por unidade</h2></div>
       {tableFilters}
-      {products.length ? <Table headers={["Produto", ...columns.map((store) => store.name)]}>{products.slice(balances.start, balances.start + stockPageSize).map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td>{columns.map((store) => <td key={store.id}>
+      {products.length ? <Table headers={["Produto", "Preço de venda", ...columns.map((store) => store.name)]}>{products.slice(balances.start, balances.start + stockPageSize).map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td><td><strong>{money(product.price)}</strong>
+        {canEditPrice && <DetailsDialog id={"preco-produto-" + product.id} title={"Preço de venda · " + product.name} trigger="Definir preço">
+          <form className="admin-form" action={saveStockSalePrice}>
+            <FilterInput filter={filter} /><input type="hidden" name="productId" value={product.id} />
+            <input type="hidden" name="stockView" value={view} /><input type="hidden" name="stockCategory" value={category ?? ""} /><input type="hidden" name="stockSearch" value={query} />
+            <label>Preço de venda unitário (R$)<input name="price" required inputMode="decimal" defaultValue={(product.price / 100).toFixed(2).replace(".", ",")} /></label>
+            <p className="form-note span-two">Preço deste produto em todas as unidades e no catálogo do site. Novas vendas usarão este valor.</p>
+            <div className="span-two"><Submit>Salvar preço de venda</Submit></div>
+          </form>
+        </DetailsDialog>}
+      </td>{columns.map((store) => <td key={store.id}>
         <strong>{product.stock[store.id] ?? 0} un.</strong>
         {Object.entries(colorsByStore[product.id]?.[store.id] ?? {}).map(([color, quantity]) =>
           <small key={color}>{color} · {quantity} un.</small>)}
@@ -717,10 +727,22 @@ function Stock({ state, filter, category, showPurchases, showCost, movementPage,
     </section>}
     {view === "lotes" && <section id="lotes-estoque" className="panel"><div className="panel-title"><h2>Lotes em estoque · origem e condição</h2></div>
       {tableFilters}
-      {lots.length ? <Table headers={["Produto", "Cor", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Custo unitário"] : [])]}>{lots.slice(stockLots.start, stockLots.start + stockPageSize).map((lot) => {
+      {lots.length ? <Table headers={["Produto", "Cor", "Unidade", "Fornecedor", "Condição", "Saldo", ...(showPurchases ? ["Preço de compra"] : []), "Preço de venda", ...(canEditPrice ? ["Ações"] : [])]}>{lots.slice(stockLots.start, stockLots.start + stockPageSize).map((lot) => {
         const purchase = state.purchases.find((item) => item.id === lot.purchaseId);
+        const product = state.products.find((item) => item.id === lot.productId);
         return <tr key={stockLotId(lot) + lot.store}><td>{state.products.find((item) => item.id === lot.productId)?.name ?? lot.productId}</td><td>{lot.color ?? "Sem cor definida"}</td><td>{storeName(lot.store, state)}</td>
-          <td>{lot.supplier}</td><td>{lot.consigned ? "Consignado" : "Próprio"}{purchase && " · " + purchaseStatus(state, lot.purchaseId, purchase.acquisition)}</td><td>{lot.quantity} un.</td>{showPurchases && <td>{money(lot.unitCost)}{purchase && <small><Link className="back-link" href={adminUrl("compras", purchase.store) + "&ficha=" + purchase.id}>Abrir compra</Link></small>}</td>}</tr>;
+          <td>{lot.supplier}</td><td>{lot.consigned ? "Consignado" : "Próprio"}{purchase && " · " + purchaseStatus(state, lot.purchaseId, purchase.acquisition)}</td><td>{lot.quantity} un.</td>{showPurchases && <td>{money(lot.unitCost)}{purchase && <small><Link className="back-link" href={adminUrl("compras", purchase.store) + "&ficha=" + purchase.id}>Abrir compra</Link></small>}</td>}
+          <td>{money(product?.price ?? 0)}</td>
+          {canEditPrice && <td>{product && <DetailsDialog id={"preco-lote-" + stockLotId(lot) + lot.store} title={"Preço de venda · " + product.name} trigger="Definir preço">
+            <form className="admin-form" action={saveStockSalePrice}>
+              <FilterInput filter={filter} /><input type="hidden" name="productId" value={product.id} />
+              <input type="hidden" name="stockView" value={view} /><input type="hidden" name="stockCategory" value={category ?? ""} /><input type="hidden" name="stockSearch" value={query} />
+              <label>Preço de compra unitário<input readOnly value={money(lot.unitCost)} /></label>
+              <label>Preço de venda unitário (R$)<input name="price" required inputMode="decimal" defaultValue={(product.price / 100).toFixed(2).replace(".", ",")} /></label>
+              <p className="form-note span-two">Preço deste produto em todas as unidades e no catálogo do site. Novas vendas usarão este valor.</p>
+              <div className="span-two"><Submit>Salvar preço de venda</Submit></div>
+            </form>
+          </DetailsDialog>}</td>}</tr>;
       })}</Table> : <Empty>Os lotes aparecem conforme você registra as compras.</Empty>}
       <StockPagination name="lotes em estoque" page={stockLots} href={(number) => pageUrl("lotesPagina", number, "lotes-estoque")} />
       <p className="admin-empty">Para vender unidades antigas sem lote, registre a compra em Compras e marque a opção de vincular ao saldo já existente.</p>
@@ -1135,7 +1157,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           {active.id === "produtos" && <Products canDelete={isDirector(user)} category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings requestedPage={params.catalogoPagina} state={state} showProducts={canAccess(user, "produtos")} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} canReturn={isDirector(user)} />}
-          {active.id === "estoque" && <Stock showCost={showPurchases || analyticsAccess.finance} view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
+          {active.id === "estoque" && <Stock canEditPrice={isDirector(user)} showCost={showPurchases || analyticsAccess.finance} view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}
             query={query} movementPage={params.movimentosPagina} state={state} filter={filter} category={category} showPurchases={showPurchases} />}
           {active.id === "compras" && <Purchases canCancel={user.role === "admin" || isPrimaryAdmin(user)} canCreateProduct={canAccess(user, "produtos")} category={category} error={params.erro} success={params.ok} query={query} state={state} filter={filter} invoices={invoices ?? []} focus={params.ficha} productId={params.produto} />}
           {active.id === "vendas" && <>
