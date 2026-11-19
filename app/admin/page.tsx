@@ -25,7 +25,7 @@ import {
   canCorrectLegacySale, historicalPayments, needsHistoricalPurchasePayment, balanceDue, businessDate, isCalendarDate, money, saleNetProfit, stockLotId, tradeInAssets, productColorAvailability, productColorStock, productCategories, stages, stockComposition, storeName, storeList,
   type Asset, type Contact, type Supplier, type Product, type RetailState, type Sale, type Store, type StoreId,
 } from "@/domain/retail";
-import { attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, reviewSaleApproval, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
+import { removeProduct, attachInvoice, reversePurchase, reverseSale, saveContact, saveProduct, savePurchase, saveSale, updateStock, savePublication, saveSaleFiscalNotes, savePurchaseCost, savePurchaseColor, saveSaleCosts, reviewSaleApproval, saveHistoricalPurchasePayment, returnConsignment, saveSupplier, saveTradeInSale, saveStoreItem, saveProfitDistribution } from "./actions";
 import { scooterFields } from "@/domain/scooter";
 import { ProductCategoryFields, PurchaseProductFields } from "./scooter-fields";
 import { SaleCustomer } from "./sale-customer";
@@ -267,7 +267,7 @@ function CategoryFilters({ tab, filter, category, query, view }: { tab: "estoque
     </nav>;
 }
 
-function Products({ products, filter, query, focus, error, category }: { products: Product[]; filter: Filter; query: string; focus?: string; error?: string; category?: Product["category"] }) {
+function Products({ products, filter, query, focus, error, category, canDelete }: { canDelete: boolean; products: Product[]; filter: Filter; query: string; focus?: string; error?: string; category?: Product["category"] }) {
   return <>
     <CreateDialog id="novo-produto" title="Novo produto" reopen={Boolean(error && !focus)}>
       {error && !focus && <p className="feedback error" role="alert">{error}</p>}
@@ -288,6 +288,15 @@ function Products({ products, filter, query, focus, error, category }: { product
             <div className="sale-detail-content">
               {error && focus === product.id && <p className="feedback error" role="alert">{error}</p>}
               <ProductForm product={product} filter={filter} />
+              {canDelete && <DetailsDialog id={"excluir-produto-" + product.id} title="Excluir produto?" trigger="Excluir produto" danger>
+                <form action={removeProduct} className="admin-form">
+                  <FilterInput filter={filter} /><input type="hidden" name="focus" value={product.id} />
+                  <p className="span-two">Excluir {product.name} ({product.sku})? Esta ação é permanente. Produtos com saldo ou histórico vinculado precisam ser mantidos para consulta.</p>
+                  <label className="checkbox span-two"><input type="checkbox" name="confirmed" required /> Confirmo a exclusão deste produto</label>
+                  <div className="span-two"><Submit variant="danger">Excluir produto</Submit></div>
+                </form>
+              </DetailsDialog>}
+
               <div className="record-actions"><Link className="back-link" href={adminUrl("compras", filter) + "&produto=" + encodeURIComponent(product.id) + "#registrar-compra"}>Registrar compra deste produto →</Link></div>
             </div>
           </DetailsDialog></td>
@@ -1123,7 +1132,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             {analyticsAccess.inventory && <InventoryOverview state={state} filter={filter} showCost={canAccess(user, "financeiro") || showPurchases} />}
             {invoices && (showSales || showPurchases) && <InvoiceOverview state={state} invoices={invoices} filter={filter} sales={showSales} purchases={showPurchases} />}
           </>}
-          {active.id === "produtos" && <Products category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
+          {active.id === "produtos" && <Products canDelete={isDirector(user)} category={category} focus={params.ficha} error={params.erro} query={query} products={state.products.filter((item) => (!category || item.category === category) && matchesSearch(query, item.name, item.sku, item.category))} filter={filter} />}
           {active.id === "catalogo" && <CatalogSettings requestedPage={params.catalogoPagina} state={state} showProducts={canAccess(user, "produtos")} />}
           {active.id === "consignados" && <Consignment state={state} filter={filter} detailed showPurchases={showPurchases} canReturn={isDirector(user)} />}
           {active.id === "estoque" && <Stock showCost={showPurchases || analyticsAccess.finance} view={stockView} error={params.erro} balancePage={params.saldosPagina} lotPage={params.lotesPagina}

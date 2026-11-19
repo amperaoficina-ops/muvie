@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, submitStoreSale, reviewStoreSale, cardReceivables, reconcileCardReceipt, sellerMinimumProfit, saleNetProfit, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
+  deleteProduct, correctHistoricalPayments, registerHistoricalPurchasePayment, cashBalance, cashMovements, acquisitionTypes, cancelPurchase, cancelSale, changeStock, isCalendarDate, normalizeCpf, paymentMethods, productCategories, recordPurchase, submitStoreSale, reviewStoreSale, cardReceivables, reconcileCardReceipt, sellerMinimumProfit, saleNetProfit, recordProfitDistribution, legacyCardMachine, cardMachineIsActive, rateMachineId, updateSaleCosts, updatePurchaseCost, setPurchaseLotColors,
   postMonthlyCosts, returnConsignedLot, reverseSettlement, saveSupplierRecord, sellTradeInAsset, settleEntry, RetailError, stages, stockLotForMovement, storeList, transferStock, type RetailState,
 } from "@/domain/retail";
 import { scooterCategory, scooterFields, type ScooterSpecs } from "@/domain/scooter";
@@ -950,4 +950,13 @@ export async function reverseCardReceipt(form: FormData) {
       reverseSettlement(state, entryId, paymentId, requiredDate(form, "date"));
     });
   });
+}
+
+export async function removeProduct(form: FormData) {
+  await runAction(form, "produtos", "Produto excluído.", async (user) => {
+    if (!isDirector(user)) throw new RetailError("Somente a Diretoria pode excluir produtos.");
+    const id = value(form, "focus", 36);
+    if (form.get("confirmed") !== "on") throw new RetailError("Confirme a exclusão do produto.");
+    await editWithAudit(user, "Exclui produto " + id, (state) => deleteProduct(state, id));
+  }, true);
 }

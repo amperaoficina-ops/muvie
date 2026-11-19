@@ -1159,3 +1159,19 @@ export function reconcileCardReceipt(state: RetailState, id: string, input: {
   row.entry.cardReconciliation = true;
   if (account) (state.cashAssignments ??= []).push({ entryId: id, settlementId: input.token, accountId: account.id });
 }
+
+export function deleteProduct(state: RetailState, id: string) {
+  const product = state.products.find((item) => item.id === id);
+  if (!product) return;
+  if (Object.values(product.stock).some((quantity) => quantity !== 0) ||
+      state.stockLots.some((lot) => lot.productId === id && lot.quantity > 0)) {
+    throw new RetailError("Este produto tem saldo em estoque. Regularize o saldo antes de excluir.");
+  }
+  const referenced = state.purchases.some((purchase) => purchase.productId === id) ||
+    state.sales.some((sale) => (sale.lines ?? [sale]).some((line) => line.productId === id)) ||
+    state.movements.some((movement) => movement.productId === id) ||
+    state.stockLots.some((lot) => lot.productId === id) ||
+    state.saleApprovalRequests?.some((request) => request.checkout.items.some((item) => item.productId === id));
+  if (referenced) throw new RetailError("Este produto tem compras, vendas ou movimentações vinculadas. A exclusão comprometeria o histórico. Você pode despublicá-lo do catálogo.");
+  state.products = state.products.filter((item) => item.id !== id);
+}

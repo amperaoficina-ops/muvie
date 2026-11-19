@@ -403,3 +403,18 @@ test("Visão geral ignora compras canceladas e mantém posição de estoque inde
   assert.equal(Object.fromEntries(past.stockByColor).Carbono, 2);
   assert.deepEqual(past.stockByCategory, current.stockByCategory);
 });
+
+test("exclusão de produto remove cadastro vazio e protege saldo e histórico", async () => {
+  const { deleteProduct } = await import("../domain/retail.ts");
+  const state = emptyRetailState();
+  state.products.push({ id: "delete", name: "Duplicado", stock: {} });
+  deleteProduct(state, "delete");
+  deleteProduct(state, "delete");
+  assert.equal(state.products.length, 0);
+  state.products.push({ id: "keep", stock: { palhoca: 1 } });
+  assert.throws(() => deleteProduct(state, "keep"), /saldo/);
+  state.products[0].stock.palhoca = 0;
+  state.sales.push({ productId: "keep" });
+  assert.throws(() => deleteProduct(state, "keep"), /histórico/);
+  assert.equal(state.products.length, 1);
+});
